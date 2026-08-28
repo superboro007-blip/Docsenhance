@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { IDCardPreset } from '../types';
+import { IDCardPreset, QuadCorners } from '../types';
+import { FourCornerFreeCrop } from './FourCornerFreeCrop';
 import {
   Crop,
   Sparkles,
@@ -17,6 +18,7 @@ import {
   ZoomOut,
   Maximize2,
   Sliders,
+  Crosshair,
 } from 'lucide-react';
 
 interface IDCardCropModalProps {
@@ -28,8 +30,11 @@ interface IDCardCropModalProps {
   customWidthMm: number;
   customHeightMm: number;
   initialCropBox?: { x: number; y: number; width: number; height: number };
-  onApplyCrop: (cropBox: { x: number; y: number; width: number; height: number }) => void;
+  initialCorners?: QuadCorners;
+  onApplyCrop: (cropBox: { x: number; y: number; width: number; height: number }, quadCorners?: QuadCorners) => void;
 }
+
+type CropEngineMode = 'box' | 'quad';
 
 export const IDCardCropModal: React.FC<IDCardCropModalProps> = ({
   isOpen,
@@ -40,6 +45,7 @@ export const IDCardCropModal: React.FC<IDCardCropModalProps> = ({
   customWidthMm,
   customHeightMm,
   initialCropBox,
+  initialCorners,
   onApplyCrop,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -47,6 +53,7 @@ export const IDCardCropModal: React.FC<IDCardCropModalProps> = ({
   const targetHeight = preset.id === 'dl_custom' ? customHeightMm : preset.heightMm;
   const presetAspectRatio = targetWidth / targetHeight; // approx 1.586 for CR80
 
+  const [engineMode, setEngineMode] = useState<CropEngineMode>('box');
   const [isFreeform, setIsFreeform] = useState(false);
 
   const [cropBox, setCropBox] = useState<{ x: number; y: number; width: number; height: number }>({
@@ -54,6 +61,13 @@ export const IDCardCropModal: React.FC<IDCardCropModalProps> = ({
     y: 5,
     width: 90,
     height: 90 / presetAspectRatio,
+  });
+
+  const [corners, setCorners] = useState<QuadCorners>({
+    tl: { x: 6, y: 6 },
+    tr: { x: 94, y: 6 },
+    br: { x: 94, y: 94 },
+    bl: { x: 6, y: 94 },
   });
 
   const [isDragging, setIsDragging] = useState(false);
@@ -84,7 +98,18 @@ export const IDCardCropModal: React.FC<IDCardCropModalProps> = ({
         height: defaultH > 92 ? 92 : defaultH,
       });
     }
-  }, [isOpen, initialCropBox, presetAspectRatio]);
+
+    if (initialCorners) {
+      setCorners(initialCorners);
+    } else {
+      setCorners({
+        tl: { x: 6, y: 6 },
+        tr: { x: 94, y: 6 },
+        br: { x: 94, y: 94 },
+        bl: { x: 6, y: 94 },
+      });
+    }
+  }, [isOpen, initialCropBox, initialCorners, presetAspectRatio]);
 
   const currentRatio = isFreeform ? null : presetAspectRatio;
 
@@ -333,7 +358,70 @@ export const IDCardCropModal: React.FC<IDCardCropModalProps> = ({
           </button>
         </div>
 
-        {/* Toolbar */}
+        {/* Primary Crop Engine Mode Switcher */}
+        <div className="px-5 py-2.5 bg-slate-950 border-b border-slate-800 flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-900 border border-white/10">
+            <button
+              onClick={() => setEngineMode('box')}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                engineMode === 'box'
+                  ? 'bg-emerald-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Crop className="w-3.5 h-3.5" />
+              Standard Box Crop
+            </button>
+            <button
+              onClick={() => setEngineMode('quad')}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                engineMode === 'quad'
+                  ? 'bg-purple-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Crosshair className="w-3.5 h-3.5 text-yellow-300" />
+              4-Corner Freecrop (Perspective Warp)
+            </button>
+          </div>
+
+          <div className="text-[11px] text-slate-400 font-medium">
+            {engineMode === 'quad' ? (
+              <span className="text-purple-300 flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
+                Drag any of the 4 corner pins individually to fix perspective, tilt, or scanner skew
+              </span>
+            ) : (
+              <span className="text-emerald-300">
+                Preset frame size: {targetWidth} × {targetHeight} mm ({preset.name})
+              </span>
+            )}
+          </div>
+        </div>
+
+        {engineMode === 'quad' ? (
+          <div className="p-4 flex-1 overflow-y-auto max-h-[620px]">
+            <FourCornerFreeCrop
+              imageSrc={imageSrc}
+              targetWidthMm={targetWidth}
+              targetHeightMm={targetHeight}
+              corners={corners}
+              onChangeCorners={setCorners}
+              onResetCorners={() => {
+                setCorners({
+                  tl: { x: 6, y: 6 },
+                  tr: { x: 94, y: 6 },
+                  br: { x: 94, y: 94 },
+                  bl: { x: 6, y: 94 },
+                });
+              }}
+              onAutoDetectCorners={handleAiDetectCardBounds}
+              isAiLoading={isAiDetecting}
+            />
+          </div>
+        ) : (
+          <>
+            {/* Toolbar */}
         <div className="px-5 py-2.5 bg-slate-950/60 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-slate-400 font-semibold flex items-center gap-1">
@@ -571,12 +659,25 @@ export const IDCardCropModal: React.FC<IDCardCropModalProps> = ({
             </div>
           </div>
         </div>
+      </>
+    )}
 
         {/* Footer */}
         <div className="px-5 py-3 bg-slate-950 border-t border-slate-800 flex items-center justify-between flex-wrap gap-3">
           <div className="text-xs text-slate-400 flex items-center gap-2">
-            <span className="inline-block w-2 h-2 rounded-full bg-emerald-400" />
-            {isFreeform ? 'Freeform Crop' : `Locked to ${targetWidth} × ${targetHeight} mm`}
+            {engineMode === 'quad' ? (
+              <>
+                <span className="inline-block w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
+                <span className="text-purple-300 font-medium">
+                  4-Corner Perspective Warp active ({targetWidth} × {targetHeight} mm target)
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="inline-block w-2 h-2 rounded-full bg-emerald-400" />
+                {isFreeform ? 'Freeform Crop' : `Locked to ${targetWidth} × ${targetHeight} mm`}
+              </>
+            )}
           </div>
 
           <div className="flex items-center gap-2.5">
@@ -588,13 +689,17 @@ export const IDCardCropModal: React.FC<IDCardCropModalProps> = ({
             </button>
             <button
               onClick={() => {
-                onApplyCrop(cropBox);
+                if (engineMode === 'quad') {
+                  onApplyCrop(cropBox, corners);
+                } else {
+                  onApplyCrop(cropBox, undefined);
+                }
                 onClose();
               }}
               className="inline-flex items-center gap-2 px-5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl shadow-lg transition-all"
             >
               <Check className="w-4 h-4" />
-              Apply Crop & Frame
+              {engineMode === 'quad' ? 'Apply Perspective Freecrop' : 'Apply Crop & Frame'}
             </button>
           </div>
         </div>

@@ -1319,11 +1319,12 @@ export const IDCardStudio: React.FC = () => {
           customWidthMm={settings.customWidthMm}
           customHeightMm={settings.customHeightMm}
           initialCropBox={activeCropSide === 'front' ? frontCard?.cropBox : backCard?.cropBox}
-          onApplyCrop={(newBox) => {
+          initialCorners={activeCropSide === 'front' ? frontCard?.quadCorners : backCard?.quadCorners}
+          onApplyCrop={(newBox, newCorners) => {
             if (activeCropSide === 'front' && frontCard) {
-              setFrontCard({ ...frontCard, cropBox: newBox });
+              setFrontCard({ ...frontCard, cropBox: newBox, quadCorners: newCorners });
             } else if (activeCropSide === 'back' && backCard) {
-              setBackCard({ ...backCard, cropBox: newBox });
+              setBackCard({ ...backCard, cropBox: newBox, quadCorners: newCorners });
             }
           }}
         />

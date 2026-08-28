@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { QuadCorners } from '../types';
+import { FourCornerFreeCrop } from './FourCornerFreeCrop';
 import {
   Crop,
   Sparkles,
@@ -21,6 +23,7 @@ import {
   Sun,
   Contrast,
   RefreshCw,
+  Crosshair,
 } from 'lucide-react';
 
 interface DocumentCropModalProps {
@@ -28,9 +31,16 @@ interface DocumentCropModalProps {
   onClose: () => void;
   imageSrc: string;
   initialCropBox?: { x: number; y: number; width: number; height: number };
+  initialCorners?: QuadCorners;
   initialRotation?: number;
-  onApplyCrop: (cropBox: { x: number; y: number; width: number; height: number }, rotation?: number) => void;
+  onApplyCrop: (
+    cropBox: { x: number; y: number; width: number; height: number },
+    quadCorners?: QuadCorners,
+    rotation?: number
+  ) => void;
 }
+
+type CropEngineMode = 'box' | 'quad';
 
 const DOCUMENT_RATIO_PRESETS = [
   { id: 'freeform', name: 'Freeform / Auto', ratio: null, desc: 'Any bounding box' },
@@ -48,10 +58,12 @@ export const DocumentCropModal: React.FC<DocumentCropModalProps> = ({
   onClose,
   imageSrc,
   initialCropBox,
+  initialCorners,
   initialRotation = 0,
   onApplyCrop,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [engineMode, setEngineMode] = useState<CropEngineMode>('box');
   const [selectedPresetId, setSelectedPresetId] = useState<string>('freeform');
   const [rotation, setRotation] = useState<number>(initialRotation);
 
@@ -60,6 +72,13 @@ export const DocumentCropModal: React.FC<DocumentCropModalProps> = ({
     y: 5,
     width: 90,
     height: 90,
+  });
+
+  const [corners, setCorners] = useState<QuadCorners>({
+    tl: { x: 5, y: 5 },
+    tr: { x: 95, y: 5 },
+    br: { x: 95, y: 95 },
+    bl: { x: 5, y: 95 },
   });
 
   const [isDragging, setIsDragging] = useState(false);
@@ -78,7 +97,7 @@ export const DocumentCropModal: React.FC<DocumentCropModalProps> = ({
   const activePreset = DOCUMENT_RATIO_PRESETS.find((p) => p.id === selectedPresetId) || DOCUMENT_RATIO_PRESETS[0];
   const targetRatio = activePreset.ratio;
 
-  // Initialize or reset crop box when modal opens
+  // Initialize or reset crop box and corners when modal opens
   useEffect(() => {
     if (!isOpen) return;
     if (initialCropBox) {
@@ -91,8 +110,20 @@ export const DocumentCropModal: React.FC<DocumentCropModalProps> = ({
         height: 92,
       });
     }
+
+    if (initialCorners) {
+      setCorners(initialCorners);
+    } else {
+      setCorners({
+        tl: { x: 5, y: 5 },
+        tr: { x: 95, y: 5 },
+        br: { x: 95, y: 95 },
+        bl: { x: 5, y: 95 },
+      });
+    }
+
     setRotation(initialRotation || 0);
-  }, [isOpen, initialCropBox, initialRotation]);
+  }, [isOpen, initialCropBox, initialCorners, initialRotation]);
 
   // Adjust crop box when ratio preset changes
   const handleSelectPreset = (presetId: string) => {
@@ -401,7 +432,70 @@ export const DocumentCropModal: React.FC<DocumentCropModalProps> = ({
           </button>
         </div>
 
-        {/* Toolbar */}
+        {/* Primary Engine Mode Switcher */}
+        <div className="px-5 py-2.5 bg-slate-950 border-b border-slate-800 flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-900 border border-white/10">
+            <button
+              onClick={() => setEngineMode('box')}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                engineMode === 'box'
+                  ? 'bg-purple-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Crop className="w-3.5 h-3.5" />
+              Standard Box Crop
+            </button>
+            <button
+              onClick={() => setEngineMode('quad')}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                engineMode === 'quad'
+                  ? 'bg-sky-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Crosshair className="w-3.5 h-3.5 text-amber-300" />
+              4-Corner Freecrop (Perspective Warp)
+            </button>
+          </div>
+
+          <div className="text-[11px] text-slate-400 font-medium">
+            {engineMode === 'quad' ? (
+              <span className="text-sky-300 flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse" />
+                Drag any of the 4 corner pins individually to fix skewed / angled phone camera scans
+              </span>
+            ) : (
+              <span className="text-purple-300">
+                Aspect ratio: {activePreset.name} ({activePreset.desc})
+              </span>
+            )}
+          </div>
+        </div>
+
+        {engineMode === 'quad' ? (
+          <div className="p-4 flex-1 overflow-y-auto max-h-[620px]">
+            <FourCornerFreeCrop
+              imageSrc={imageSrc}
+              targetWidthMm={210}
+              targetHeightMm={297}
+              corners={corners}
+              onChangeCorners={setCorners}
+              onResetCorners={() => {
+                setCorners({
+                  tl: { x: 5, y: 5 },
+                  tr: { x: 95, y: 5 },
+                  br: { x: 95, y: 95 },
+                  bl: { x: 5, y: 95 },
+                });
+              }}
+              onAutoDetectCorners={handleAiDetectDocumentBounds}
+              isAiLoading={isAiDetecting}
+            />
+          </div>
+        ) : (
+          <>
+            {/* Toolbar */}
         <div className="px-5 py-2.5 bg-slate-950/60 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-slate-400 font-semibold flex items-center gap-1">
@@ -653,12 +747,23 @@ export const DocumentCropModal: React.FC<DocumentCropModalProps> = ({
             </div>
           </div>
         </div>
+      </>
+    )}
 
         {/* Footer */}
         <div className="px-5 py-3 bg-slate-950 border-t border-slate-800 flex items-center justify-between flex-wrap gap-3">
           <div className="text-xs text-slate-400 flex items-center gap-2">
-            <span className="inline-block w-2 h-2 rounded-full bg-purple-400" />
-            {activePreset.name} • {Math.round(cropBox.width)}% × {Math.round(cropBox.height)}% Selected
+            {engineMode === 'quad' ? (
+              <>
+                <span className="inline-block w-2 h-2 rounded-full bg-sky-400 animate-pulse" />
+                <span className="text-sky-300 font-medium">4-Corner Perspective Warp active</span>
+              </>
+            ) : (
+              <>
+                <span className="inline-block w-2 h-2 rounded-full bg-purple-400" />
+                {activePreset.name} • {Math.round(cropBox.width)}% × {Math.round(cropBox.height)}% Selected
+              </>
+            )}
           </div>
 
           <div className="flex items-center gap-2.5">
@@ -670,13 +775,17 @@ export const DocumentCropModal: React.FC<DocumentCropModalProps> = ({
             </button>
             <button
               onClick={() => {
-                onApplyCrop(cropBox, rotation);
+                if (engineMode === 'quad') {
+                  onApplyCrop(cropBox, corners, rotation);
+                } else {
+                  onApplyCrop(cropBox, undefined, rotation);
+                }
                 onClose();
               }}
               className="inline-flex items-center gap-2 px-5 py-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-500 rounded-xl shadow-lg transition-all"
             >
               <Check className="w-4 h-4" />
-              Apply Document Crop
+              {engineMode === 'quad' ? 'Apply Perspective Freecrop' : 'Apply Document Crop'}
             </button>
           </div>
         </div>
