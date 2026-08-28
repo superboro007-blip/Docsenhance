@@ -17,6 +17,7 @@ import {
 } from '../utils/imageProcessing';
 import { PassportCropModal } from './PassportCropModal';
 import { WebcamModal } from './WebcamModal';
+import { BackgroundRemovalModal } from './BackgroundRemovalModal';
 import {
   Upload,
   Camera,
@@ -32,6 +33,7 @@ import {
   CheckCircle2,
   Info,
   Maximize2,
+  Wand2,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -67,10 +69,12 @@ export const PassportStudio: React.FC<PassportStudioProps> = () => {
 
   const [cropBox, setCropBox] = useState<{ x: number; y: number; width: number; height: number } | undefined>(undefined);
   const [isCropModalOpen, setIsCropModalOpen] = useState(false);
+  const [isBgRemovalOpen, setIsBgRemovalOpen] = useState(false);
   const [isWebcamOpen, setIsWebcamOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [sheetPreviewUrl, setSheetPreviewUrl] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'presets' | 'adjustments' | 'layout'>('presets');
+
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lastRenderedCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -320,10 +324,17 @@ export const PassportStudio: React.FC<PassportStudioProps> = () => {
                 <div className="flex flex-col gap-1.5">
                   <button
                     onClick={() => setIsCropModalOpen(true)}
-                    className="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 text-xs font-semibold border border-blue-500/30 transition-colors"
+                    className="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 text-xs font-semibold border border-blue-500/30 transition-colors"
                   >
                     <Crop className="w-4 h-4" />
-                    Open Passport Crop Box
+                    Manual & AI Biometric Crop
+                  </button>
+                  <button
+                    onClick={() => setIsBgRemovalOpen(true)}
+                    className="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 text-xs font-semibold border border-purple-500/30 transition-colors"
+                  >
+                    <Wand2 className="w-4 h-4 text-purple-400" />
+                    Remove / Change Background
                   </button>
                   <button
                     onClick={handleDownloadSinglePhoto}
@@ -775,6 +786,19 @@ export const PassportStudio: React.FC<PassportStudioProps> = () => {
           customHeightMm={settings.customHeightMm}
           initialCropBox={cropBox}
           onApplyCrop={(newBox) => setCropBox(newBox)}
+        />
+      )}
+
+      {/* Background Removal Modal */}
+      {rawImage && (
+        <BackgroundRemovalModal
+          isOpen={isBgRemovalOpen}
+          onClose={() => setIsBgRemovalOpen(false)}
+          imageSrc={rawImage}
+          onApply={(newImage) => {
+            setRawImage(newImage);
+            setCropBox(undefined);
+          }}
         />
       )}
 

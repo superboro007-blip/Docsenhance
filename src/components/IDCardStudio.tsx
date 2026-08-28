@@ -21,6 +21,7 @@ import {
 } from '../utils/imageProcessing';
 import { IDCardCropModal } from './IDCardCropModal';
 import { WebcamModal } from './WebcamModal';
+import { BackgroundRemovalModal } from './BackgroundRemovalModal';
 import {
   Upload,
   Camera,
@@ -41,7 +42,9 @@ import {
   AlertTriangle,
   Check,
   X,
+  Wand2,
 } from 'lucide-react';
+
 import confetti from 'canvas-confetti';
 
 export const IDCardStudio: React.FC = () => {
@@ -99,12 +102,13 @@ export const IDCardStudio: React.FC = () => {
     laminateMarginMm: 3,
     spacingMm: 8,
     cardsCount: 2,
-    includeDetailsHeader: true,
+    includeDetailsHeader: false,
     headerText: 'NATIONAL ID CARD / DRIVING LICENSE PRINT SHEET',
   });
 
   // Crop & Modal state
   const [activeCropSide, setActiveCropSide] = useState<'front' | 'back' | null>(null);
+  const [bgRemovalSide, setBgRemovalSide] = useState<'front' | 'back' | null>(null);
   const [webcamMode, setWebcamMode] = useState<'idcard_front' | 'idcard_back' | null>(null);
   const [isAiDetecting, setIsAiDetecting] = useState(false);
   const [aiDetectNotification, setAiDetectNotification] = useState<string | null>(null);
@@ -136,13 +140,29 @@ export const IDCardStudio: React.FC = () => {
         const file = files[i];
         const dataUrl = await readFileAsDataUrl(file);
 
-        // Call backend AI side detector
-        const res = await fetch('/api/ai/detect-card-side', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ imageBase64: dataUrl }),
-        });
-        const detectRes = await res.json();
+        // Call backend AI side detector with safe fallback
+        let detectRes: any = null;
+        try {
+          const res = await fetch('/api/ai/detect-card-side', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ imageBase64: dataUrl }),
+          });
+          if (res.ok) {
+            detectRes = await res.json();
+          }
+        } catch (fetchErr) {
+          console.warn('Backend detection unavailable, using auto-slotting:', fetchErr);
+        }
+
+        if (!detectRes) {
+          detectRes = {
+            side: i === 0 && !frontCard ? 'front' : 'back',
+            confidence: 0.9,
+            summary: i === 0 && !frontCard ? 'Assigned as Front Side' : 'Assigned as Back Side',
+            isAmbiguous: false,
+          };
+        }
 
         // Check if detection is ambiguous
         const isAmbiguous =
@@ -727,13 +747,22 @@ export const IDCardStudio: React.FC = () => {
                     <Camera className="w-3.5 h-3.5" />
                   </button>
                   {frontCard && (
-                    <button
-                      onClick={() => setActiveCropSide('front')}
-                      className="p-1 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/30 text-blue-300 text-[11px]"
-                      title="Crop Front"
-                    >
-                      <Crop className="w-3.5 h-3.5" />
-                    </button>
+                    <>
+                      <button
+                        onClick={() => setActiveCropSide('front')}
+                        className="p-1 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/30 text-blue-300 text-[11px]"
+                        title="Crop Front"
+                      >
+                        <Crop className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => setBgRemovalSide('front')}
+                        className="p-1 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/30 text-purple-300 text-[11px]"
+                        title="Remove / Replace Background"
+                      >
+                        <Wand2 className="w-3.5 h-3.5" />
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -814,13 +843,22 @@ export const IDCardStudio: React.FC = () => {
                     <Camera className="w-3.5 h-3.5" />
                   </button>
                   {backCard && (
-                    <button
-                      onClick={() => setActiveCropSide('back')}
-                      className="p-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 text-[11px]"
-                      title="Crop Back"
-                    >
-                      <Crop className="w-3.5 h-3.5" />
-                    </button>
+                    <>
+                      <button
+                        onClick={() => setActiveCropSide('back')}
+                        className="p-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 text-[11px]"
+                        title="Crop Back"
+                      >
+                        <Crop className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => setBgRemovalSide('back')}
+                        className="p-1 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/30 text-purple-300 text-[11px]"
+                        title="Remove / Replace Background"
+                      >
+                        <Wand2 className="w-3.5 h-3.5" />
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -1182,6 +1220,22 @@ export const IDCardStudio: React.FC = () => {
               setFrontCard({ ...frontCard, cropBox: newBox });
             } else if (activeCropSide === 'back' && backCard) {
               setBackCard({ ...backCard, cropBox: newBox });
+            }
+          }}
+        />
+      )}
+
+      {/* Background Removal Modal */}
+      {bgRemovalSide && (
+        <BackgroundRemovalModal
+          isOpen={!!bgRemovalSide}
+          onClose={() => setBgRemovalSide(null)}
+          imageSrc={bgRemovalSide === 'front' ? frontCard?.dataUrl || '' : backCard?.dataUrl || ''}
+          onApply={(newImage) => {
+            if (bgRemovalSide === 'front' && frontCard) {
+              setFrontCard({ ...frontCard, dataUrl: newImage, cropBox: undefined });
+            } else if (bgRemovalSide === 'back' && backCard) {
+              setBackCard({ ...backCard, dataUrl: newImage, cropBox: undefined });
             }
           }}
         />

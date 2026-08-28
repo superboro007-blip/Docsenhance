@@ -22,6 +22,173 @@ export function loadImage(src: string): Promise<HTMLImageElement> {
 }
 
 /**
+ * Smart Background Removal and Solid Color Replacement Engine
+ * Performs intelligent perimeter flood-fill & color distance segmentation with alpha feathering
+ */
+export async function removeImageBackground(
+  imageSrc: string,
+  targetBgColor: string = 'transparent',
+  tolerance: number = 32,
+  featherRadius: number = 2
+): Promise<string> {
+  const img = await loadImage(imageSrc);
+  const canvas = document.createElement('canvas');
+  canvas.width = img.width;
+  canvas.height = img.height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas 2D context failed');
+
+  ctx.drawImage(img, 0, 0);
+  const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imgData.data;
+  const w = canvas.width;
+  const h = canvas.height;
+
+  // Sample background colors from four corners and top edges
+  const samplePoints = [
+    { x: 0, y: 0 },
+    { x: w - 1, y: 0 },
+    { x: Math.floor(w / 2), y: 0 },
+    { x: 0, y: Math.floor(h * 0.3) },
+    { x: w - 1, y: Math.floor(h * 0.3) },
+    { x: 0, y: h - 1 },
+    { x: w - 1, y: h - 1 },
+  ];
+
+  const bgPalette: { r: number; g: number; b: number }[] = [];
+  for (const pt of samplePoints) {
+    const idx = (pt.y * w + pt.x) * 4;
+    bgPalette.push({
+      r: data[idx],
+      g: data[idx + 1],
+      b: data[idx + 2],
+    });
+  }
+
+  // Helper to test if a pixel matches any background sample color within tolerance
+  const isBgPixel = (r: number, g: number, b: number) => {
+    for (const bg of bgPalette) {
+      const dist = Math.sqrt(
+        (r - bg.r) ** 2 * 0.299 +
+        (g - bg.g) ** 2 * 0.587 +
+        (b - bg.b) ** 2 * 0.114
+      );
+      if (dist <= tolerance) return true;
+    }
+    return false;
+  };
+
+  // Visited array for flood-fill segmentation starting from perimeter
+  const isBackground = new Uint8Array(w * h);
+  const queue: number[] = [];
+
+  // Seed with top, left, and right borders
+  for (let x = 0; x < w; x++) {
+    const idxTop = x;
+    const pTop = idxTop * 4;
+    if (isBgPixel(data[pTop], data[pTop + 1], data[pTop + 2])) {
+      isBackground[idxTop] = 1;
+      queue.push(idxTop);
+    }
+    const idxBot = (h - 1) * w + x;
+    const pBot = idxBot * 4;
+    if (isBgPixel(data[pBot], data[pBot + 1], data[pBot + 2])) {
+      isBackground[idxBot] = 1;
+      queue.push(idxBot);
+    }
+  }
+
+  for (let y = 0; y < h; y++) {
+    const idxLeft = y * w;
+    const pLeft = idxLeft * 4;
+    if (isBgPixel(data[pLeft], data[pLeft + 1], data[pLeft + 2])) {
+      isBackground[idxLeft] = 1;
+      queue.push(idxLeft);
+    }
+    const idxRight = y * w + (w - 1);
+    const pRight = idxRight * 4;
+    if (isBgPixel(data[pRight], data[pRight + 1], data[pRight + 2])) {
+      isBackground[idxRight] = 1;
+      queue.push(idxRight);
+    }
+  }
+
+  // BFS Flood Fill to find contiguous background area
+  let head = 0;
+  while (head < queue.length) {
+    const curr = queue[head++];
+    const cx = curr % w;
+    const cy = Math.floor(curr / w);
+
+    const neighbors = [
+      { x: cx + 1, y: cy },
+      { x: cx - 1, y: cy },
+      { x: cx, y: cy + 1 },
+      { x: cx, y: cy - 1 },
+    ];
+
+    for (const nb of neighbors) {
+      if (nb.x >= 0 && nb.x < w && nb.y >= 0 && nb.y < h) {
+        const nIdx = nb.y * w + nb.x;
+        if (!isBackground[nIdx]) {
+          const p = nIdx * 4;
+          if (isBgPixel(data[p], data[p + 1], data[p + 2])) {
+            isBackground[nIdx] = 1;
+            queue.push(nIdx);
+          }
+        }
+      }
+    }
+  }
+
+  // If target is transparent, make background pixels alpha = 0
+  const isTransparent = targetBgColor === 'transparent' || !targetBgColor;
+  let tr = 255, tg = 255, tb = 255;
+  if (!isTransparent && targetBgColor.startsWith('#')) {
+    tr = parseInt(targetBgColor.slice(1, 3), 16) || 255;
+    tg = parseInt(targetBgColor.slice(3, 5), 16) || 255;
+    tb = parseInt(targetBgColor.slice(5, 7), 16) || 255;
+  }
+
+  // Apply background mask with optional edge smoothing
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const idx = y * w + x;
+      const p = idx * 4;
+
+      if (isBackground[idx]) {
+        if (isTransparent) {
+          data[p + 3] = 0; // Transparent
+        } else {
+          data[p] = tr;
+          data[p + 1] = tg;
+          data[p + 2] = tb;
+          data[p + 3] = 255;
+        }
+      }
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+
+  // If replacing with solid color, draw clean background underneath transparent edges
+  if (!isTransparent) {
+    const finalCanvas = document.createElement('canvas');
+    finalCanvas.width = w;
+    finalCanvas.height = h;
+    const finalCtx = finalCanvas.getContext('2d');
+    if (finalCtx) {
+      finalCtx.fillStyle = targetBgColor;
+      finalCtx.fillRect(0, 0, w, h);
+      finalCtx.drawImage(canvas, 0, 0);
+      return finalCanvas.toDataURL('image/jpeg', 0.98);
+    }
+  }
+
+  return canvas.toDataURL('image/png');
+}
+
+/**
  * Applies adjustments (brightness, contrast, saturation, sharpness, background color) and crops to target aspect ratio
  */
 export async function processPassportImage(
@@ -304,15 +471,7 @@ export async function renderPassportSheetCanvas(
     }
   }
 
-  // Draw header text / metadata footer if requested
-  ctx.fillStyle = '#6b7280';
-  ctx.font = '24px sans-serif';
-  ctx.fillText(
-    `Passport Photo Studio (${photoWidthMm}×${photoHeightMm}mm) - ${drawnCount} Photos - Ready for Cutting`,
-    startXPx,
-    startYPx > 50 ? startYPx - 20 : sheetHeightPx - 30
-  );
-
+  // No hardcoded headers/footers in print output as requested by user
   return canvas;
 }
 

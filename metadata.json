@@ -1,6 +1,10 @@
 {
   "name": "Passport & ID Studio",
   "description": "Professional studio for 36-grid passport photos, dual-sided ID cards with AI front/back detection, and document printing on A4 and photo sheets.",
-  "requestFramePermissions": ["camera"],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

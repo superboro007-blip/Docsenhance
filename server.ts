@@ -288,6 +288,71 @@ Find the person's face and return ideal crop box percentage coordinates (0 to 10
     }
   });
 
+  // AI Background Segmentation & Analysis Endpoint
+  app.post("/api/ai/remove-background", async (req, res) => {
+    try {
+      const { imageBase64, targetBgColor = "transparent", mimeType = "image/jpeg" } = req.body;
+      const ai = getAiClient();
+      if (!ai || !imageBase64) {
+        return res.json({
+          status: "fallback",
+          message: "Client-side smart background removal active",
+          targetBgColor,
+        });
+      }
+
+      const cleanBase64 = imageBase64.replace(/^data:image\/[a-z]+;base64,/, "");
+      const prompt = `Analyze this portrait/document photo to assist with background removal.
+Identify:
+1. The dominant background color in hex format (e.g. #f4f4f4, #ffffff, #2a3b4c).
+2. The bounding box of the main person or card subject in normalized coordinates (0-1000 scale).
+3. The lighting uniformity and background complexity (plain, gradient, textured, outdoor).
+4. Edge sharpness recommendation (soft, medium, hard).`;
+
+      const response = await generateContentWithRetry(ai, {
+        model: "gemini-2.5-flash",
+        contents: [
+          { inlineData: { data: cleanBase64, mimeType } },
+          { text: prompt },
+        ],
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              detectedBgHex: { type: Type.STRING },
+              subjectBounds: {
+                type: Type.OBJECT,
+                properties: {
+                  yMin: { type: Type.NUMBER },
+                  xMin: { type: Type.NUMBER },
+                  yMax: { type: Type.NUMBER },
+                  xMax: { type: Type.NUMBER },
+                },
+              },
+              backgroundType: { type: Type.STRING },
+              recommendedTolerance: { type: Type.NUMBER },
+            },
+            required: ["detectedBgHex"],
+          },
+        },
+      });
+
+      const parsed = JSON.parse(response.text || "{}");
+      return res.json({
+        status: "ok",
+        analysis: parsed,
+        targetBgColor,
+      });
+    } catch (err: any) {
+      console.warn("AI Remove Background note:", err?.message || err);
+      return res.json({
+        status: "fallback",
+        message: "Applied fast local smart segmentation",
+      });
+    }
+  });
+
   // Vite middleware in dev mode
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
