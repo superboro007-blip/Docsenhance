@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Camera, RefreshCw, X, Check, FlipHorizontal } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Camera, RefreshCw, X, Check, FlipHorizontal, Upload, AlertCircle, HelpCircle } from 'lucide-react';
 
 interface WebcamModalProps {
   isOpen: boolean;
@@ -15,58 +15,95 @@ export const WebcamModal: React.FC<WebcamModalProps> = ({
   mode,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
 
-  useEffect(() => {
-    if (!isOpen) {
-      if (stream) {
-        stream.getTracks().forEach((track) => track.stop());
-        setStream(null);
-      }
-      setCapturedPhoto(null);
-      setError(null);
+  const stopActiveStream = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => {
+        try {
+          track.stop();
+        } catch {
+          // ignore
+        }
+      });
+      streamRef.current = null;
+    }
+    setStream(null);
+  }, []);
+
+  const initCamera = useCallback(async () => {
+    if (!navigator?.mediaDevices?.getUserMedia) {
+      setError('Camera API is not supported in this browser environment. You can upload a photo directly instead.');
       return;
     }
 
-    let activeStream: MediaStream | null = null;
+    setIsLoading(true);
+    setError(null);
+    stopActiveStream();
 
-    async function initCamera() {
-      try {
-        setError(null);
-        if (stream) {
-          stream.getTracks().forEach((track) => track.stop());
+    try {
+      const constraints: MediaStreamConstraints = {
+        video: {
+          facingMode: facingMode,
+          width: { ideal: 1920, max: 2560 },
+          height: { ideal: 1080, max: 1440 },
+        },
+        audio: false,
+      };
+
+      const newStream = await navigator.mediaDevices.getUserMedia(constraints);
+      streamRef.current = newStream;
+      setStream(newStream);
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = newStream;
+        try {
+          await videoRef.current.play();
+        } catch {
+          // Auto-play might need user interaction or is muted
         }
-        const newStream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: facingMode,
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
-          },
-          audio: false,
-        });
-        activeStream = newStream;
-        setStream(newStream);
-        if (videoRef.current) {
-          videoRef.current.srcObject = newStream;
-        }
-      } catch (err: any) {
-        console.error('Camera access error:', err);
-        setError('Camera access denied or device unavailable. Please ensure permissions are granted.');
       }
+    } catch (err: any) {
+      const errName = err?.name || '';
+      const errMsg = err?.message || String(err);
+
+      if (errName === 'NotAllowedError' || errMsg.includes('Permission dismissed') || errMsg.includes('Permission denied')) {
+        setError('Camera permission was dismissed or blocked. Click "Retry Camera" to prompt again, or upload a photo directly.');
+      } else if (errName === 'NotFoundError' || errName === 'DevicesNotFoundError') {
+        setError('No camera device was found on your system. You can upload a photo file instead.');
+      } else if (errName === 'NotReadableError' || errName === 'TrackStartError') {
+        setError('Camera is currently in use by another application or browser tab. Please close other camera apps and retry.');
+      } else {
+        setError('Camera could not be started. You can upload a photo from your device instead.');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, [facingMode, stopActiveStream]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      stopActiveStream();
+      setCapturedPhoto(null);
+      setError(null);
+      setCountdown(null);
+      return;
     }
 
     initCamera();
 
     return () => {
-      if (activeStream) {
-        activeStream.getTracks().forEach((track) => track.stop());
-      }
+      stopActiveStream();
     };
-  }, [isOpen, facingMode]);
+  }, [isOpen, initCamera, stopActiveStream]);
 
   const handleTakePhoto = () => {
     if (!videoRef.current) return;
@@ -81,7 +118,7 @@ export const WebcamModal: React.FC<WebcamModalProps> = ({
         }
         return prev - 1;
       });
-    }, 800);
+    }, 700);
   };
 
   const snapImage = () => {
@@ -93,7 +130,7 @@ export const WebcamModal: React.FC<WebcamModalProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Flip horizontally if user camera
+    // Flip horizontally if front user camera
     if (facingMode === 'user') {
       ctx.translate(canvas.width, 0);
       ctx.scale(-1, 1);
@@ -102,10 +139,12 @@ export const WebcamModal: React.FC<WebcamModalProps> = ({
 
     const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
     setCapturedPhoto(dataUrl);
+    stopActiveStream();
   };
 
   const handleRetake = () => {
     setCapturedPhoto(null);
+    initCamera();
   };
 
   const handleConfirm = () => {
@@ -115,13 +154,37 @@ export const WebcamModal: React.FC<WebcamModalProps> = ({
     }
   };
 
+  const handleFallbackFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      if (dataUrl) {
+        onCapture(dataUrl);
+        onClose();
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
-      <div className="glass-card text-white rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden border border-white/15 flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-3 sm:p-4 animate-in fade-in duration-200">
+      <div className="glass-card text-white rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden border border-white/15 flex flex-col bg-slate-900/95">
+        {/* Hidden fallback file input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleFallbackFileSelect}
+        />
+
         {/* Header */}
-        <div className="px-5 py-3.5 border-b border-white/10 flex items-center justify-between bg-black/30">
+        <div className="px-5 py-3.5 border-b border-white/10 flex items-center justify-between bg-black/40">
           <h3 className="font-semibold text-base flex items-center gap-2">
             <Camera className="w-5 h-5 text-blue-400" />
             {mode === 'passport' && 'Capture Passport Portrait Photo'}
@@ -129,7 +192,10 @@ export const WebcamModal: React.FC<WebcamModalProps> = ({
             {mode === 'idcard_back' && 'Capture ID Card (Back Side)'}
           </h3>
           <button
-            onClick={onClose}
+            onClick={() => {
+              stopActiveStream();
+              onClose();
+            }}
             className="p-1.5 text-slate-400 hover:text-white rounded-full hover:bg-white/10 transition-colors"
           >
             <X className="w-5 h-5" />
@@ -139,9 +205,36 @@ export const WebcamModal: React.FC<WebcamModalProps> = ({
         {/* Video / Photo Preview Area */}
         <div className="relative bg-black min-h-[380px] max-h-[480px] flex items-center justify-center overflow-hidden">
           {error ? (
-            <div className="p-8 text-center max-w-md">
-              <p className="text-red-400 text-sm mb-4">{error}</p>
-              <p className="text-xs text-slate-400">You can also upload photos from your files instead.</p>
+            <div className="p-8 text-center max-w-md space-y-4">
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-500/30 text-amber-400 flex items-center justify-center mx-auto">
+                <AlertCircle className="w-6 h-6" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-white mb-1">Camera Permission Required</h4>
+                <p className="text-xs text-slate-300 leading-relaxed">{error}</p>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 pt-2">
+                <button
+                  onClick={() => initCamera()}
+                  className="w-full sm:w-auto px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-bold text-white flex items-center justify-center gap-1.5 transition-all shadow-sm"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+                  Retry Camera
+                </button>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full sm:w-auto px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-xs font-bold text-white flex items-center justify-center gap-1.5 transition-all shadow-sm"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  Upload Photo File Instead
+                </button>
+              </div>
+
+              <div className="pt-2 text-[11px] text-slate-500 flex items-center justify-center gap-1">
+                <HelpCircle className="w-3 h-3 text-slate-400" />
+                <span>Tip: You can also open the app in a new browser tab for full native webcam access.</span>
+              </div>
             </div>
           ) : capturedPhoto ? (
             <img src={capturedPhoto} alt="Captured" className="max-h-[480px] w-full object-contain" />
@@ -185,9 +278,9 @@ export const WebcamModal: React.FC<WebcamModalProps> = ({
         </div>
 
         {/* Footer Controls */}
-        <div className="px-5 py-4 bg-black/30 border-t border-white/10 flex items-center justify-between">
+        <div className="px-5 py-4 bg-black/40 border-t border-white/10 flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2">
-            {!capturedPhoto && (
+            {!capturedPhoto && !error && (
               <button
                 onClick={() => setFacingMode(facingMode === 'user' ? 'environment' : 'user')}
                 className="px-3 py-1.5 rounded-xl glass-card hover:bg-white/10 text-xs font-medium text-slate-300 border border-white/10 flex items-center gap-1.5 transition-colors"
@@ -196,6 +289,13 @@ export const WebcamModal: React.FC<WebcamModalProps> = ({
                 Flip Camera
               </button>
             )}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="px-3 py-1.5 rounded-xl glass-card hover:bg-white/10 text-xs font-medium text-slate-300 border border-white/10 flex items-center gap-1.5 transition-colors"
+            >
+              <Upload className="w-3.5 h-3.5 text-purple-400" />
+              Upload Image
+            </button>
           </div>
 
           <div className="flex items-center gap-3">
@@ -203,14 +303,14 @@ export const WebcamModal: React.FC<WebcamModalProps> = ({
               <>
                 <button
                   onClick={handleRetake}
-                  className="px-4 py-2 rounded-xl glass-card hover:bg-white/10 text-sm font-medium text-slate-200 border border-white/10 flex items-center gap-2 transition-colors"
+                  className="px-4 py-2 rounded-xl glass-card hover:bg-white/10 text-xs font-medium text-slate-200 border border-white/10 flex items-center gap-2 transition-colors"
                 >
-                  <RefreshCw className="w-4 h-4" />
+                  <RefreshCw className="w-3.5 h-3.5" />
                   Retake Photo
                 </button>
                 <button
                   onClick={handleConfirm}
-                  className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold text-white flex items-center gap-2 accent-glow-emerald transition-all"
+                  className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white flex items-center gap-2 accent-glow-emerald transition-all shadow-md"
                 >
                   <Check className="w-4 h-4" />
                   Use This Photo
@@ -219,8 +319,8 @@ export const WebcamModal: React.FC<WebcamModalProps> = ({
             ) : (
               <button
                 onClick={handleTakePhoto}
-                disabled={!!error}
-                className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm flex items-center gap-2 accent-glow transition-all active:scale-95 disabled:opacity-50"
+                disabled={!!error || isLoading}
+                className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs flex items-center gap-2 accent-glow transition-all active:scale-95 disabled:opacity-50 shadow-md"
               >
                 <Camera className="w-4 h-4" />
                 Take Photo

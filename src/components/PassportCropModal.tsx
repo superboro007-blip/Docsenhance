@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { PassportPreset } from '../types';
+import { PassportPreset, QuadCorners } from '../types';
+import { FourCornerFreeCrop } from './FourCornerFreeCrop';
 import {
   Crop,
   Sparkles,
@@ -18,6 +19,7 @@ import {
   ZoomOut,
   RotateCcw,
   Sliders,
+  Crosshair,
 } from 'lucide-react';
 
 interface PassportCropModalProps {
@@ -28,10 +30,12 @@ interface PassportCropModalProps {
   customWidthMm: number;
   customHeightMm: number;
   initialCropBox?: { x: number; y: number; width: number; height: number };
-  onApplyCrop: (cropBox: { x: number; y: number; width: number; height: number }) => void;
+  initialCorners?: QuadCorners;
+  onApplyCrop: (cropBox: { x: number; y: number; width: number; height: number }, quadCorners?: QuadCorners) => void;
 }
 
 type AspectRatioMode = 'preset' | 'free' | '1:1' | '3:4' | '4:3' | 'full';
+type CropEngineMode = 'box' | 'quad';
 
 export const PassportCropModal: React.FC<PassportCropModalProps> = ({
   isOpen,
@@ -41,6 +45,7 @@ export const PassportCropModal: React.FC<PassportCropModalProps> = ({
   customWidthMm,
   customHeightMm,
   initialCropBox,
+  initialCorners,
   onApplyCrop,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -50,6 +55,7 @@ export const PassportCropModal: React.FC<PassportCropModalProps> = ({
   const targetHeight = preset.id === 'custom_photo' ? customHeightMm : preset.heightMm;
   const presetAspectRatio = targetWidth / targetHeight;
 
+  const [engineMode, setEngineMode] = useState<CropEngineMode>('box');
   const [aspectMode, setAspectMode] = useState<AspectRatioMode>('preset');
   const [activeTab, setActiveTab] = useState<'manual' | 'ai'>('manual');
 
@@ -58,6 +64,13 @@ export const PassportCropModal: React.FC<PassportCropModalProps> = ({
     y: 5,
     width: 80,
     height: 80 / presetAspectRatio,
+  });
+
+  const [corners, setCorners] = useState<QuadCorners>({
+    tl: { x: 8, y: 6 },
+    tr: { x: 92, y: 6 },
+    br: { x: 92, y: 94 },
+    bl: { x: 8, y: 94 },
   });
 
   const [isDragging, setIsDragging] = useState(false);
@@ -74,7 +87,7 @@ export const PassportCropModal: React.FC<PassportCropModalProps> = ({
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [aiMessage, setAiMessage] = useState<string | null>(null);
 
-  // Initialize crop box on modal open
+  // Initialize crop box and corners on modal open
   useEffect(() => {
     if (!isOpen) return;
 
@@ -90,7 +103,18 @@ export const PassportCropModal: React.FC<PassportCropModalProps> = ({
         height: defaultH > 96 ? 96 : defaultH,
       });
     }
-  }, [isOpen, initialCropBox, presetAspectRatio]);
+
+    if (initialCorners) {
+      setCorners(initialCorners);
+    } else {
+      setCorners({
+        tl: { x: 8, y: 6 },
+        tr: { x: 92, y: 6 },
+        br: { x: 92, y: 94 },
+        bl: { x: 8, y: 94 },
+      });
+    }
+  }, [isOpen, initialCropBox, initialCorners, presetAspectRatio]);
 
   // Current ratio factor (or null if freeform)
   const currentRatio =
@@ -400,88 +424,151 @@ export const PassportCropModal: React.FC<PassportCropModalProps> = ({
           </button>
         </div>
 
-        {/* Toolbar & Aspect Ratio Mode Selector */}
-        <div className="px-5 py-2.5 bg-slate-950/60 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
-          {/* Aspect Ratio Selector Tabs */}
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-slate-400 font-semibold mr-1 flex items-center gap-1">
-              <Sliders className="w-3.5 h-3.5 text-blue-400" /> Mode:
-            </span>
+        {/* Primary Crop Mode Switcher */}
+        <div className="px-5 py-2.5 bg-slate-950 border-b border-slate-800 flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-900 border border-white/10">
             <button
-              onClick={() => handleRatioChange('preset')}
-              className={`px-3 py-1.5 rounded-lg font-medium transition-all flex items-center gap-1 ${
-                aspectMode === 'preset'
-                  ? 'bg-blue-600 text-white shadow-sm font-semibold'
-                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+              onClick={() => setEngineMode('box')}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                engineMode === 'box'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <Lock className="w-3 h-3" />
-              Locked ({targetWidth}×{targetHeight} mm)
+              <Crop className="w-3.5 h-3.5" />
+              Standard Box / Biometric Crop
             </button>
             <button
-              onClick={() => handleRatioChange('free')}
-              className={`px-3 py-1.5 rounded-lg font-medium transition-all flex items-center gap-1 ${
-                aspectMode === 'free'
-                  ? 'bg-purple-600 text-white shadow-sm font-semibold'
-                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+              onClick={() => setEngineMode('quad')}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                engineMode === 'quad'
+                  ? 'bg-purple-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <Unlock className="w-3 h-3" />
-              Freeform Manual Crop
-            </button>
-            <button
-              onClick={() => handleRatioChange('1:1')}
-              className={`px-2.5 py-1.5 rounded-lg font-medium transition-all ${
-                aspectMode === '1:1'
-                  ? 'bg-blue-600 text-white shadow-sm font-semibold'
-                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-              }`}
-            >
-              1:1 Square
-            </button>
-            <button
-              onClick={() => handleRatioChange('3:4')}
-              className={`px-2.5 py-1.5 rounded-lg font-medium transition-all ${
-                aspectMode === '3:4'
-                  ? 'bg-blue-600 text-white shadow-sm font-semibold'
-                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-              }`}
-            >
-              3:4 Portrait
-            </button>
-            <button
-              onClick={maximizeCrop}
-              className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center gap-1 font-medium"
-              title="Fit to full area"
-            >
-              <Maximize2 className="w-3 h-3" /> Maximize
+              <Crosshair className="w-3.5 h-3.5 text-yellow-300" />
+              4-Corner Freecrop (Perspective Warp)
             </button>
           </div>
 
-          {/* Quick AI & Guide Buttons */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleAiAutoCrop}
-              disabled={isAiLoading}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold transition-all shadow-sm disabled:opacity-50"
-            >
-              <Sparkles className={`w-3.5 h-3.5 ${isAiLoading ? 'animate-spin' : ''}`} />
-              {isAiLoading ? 'Centering Face...' : 'AI Auto-Center'}
-            </button>
-
-            <button
-              onClick={() => setShowBiometricGuide(!showBiometricGuide)}
-              className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg font-medium transition-all border ${
-                showBiometricGuide
-                  ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
-                  : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <User className="w-3.5 h-3.5" />
-              {showBiometricGuide ? 'Hide Face Guides' : 'Face Guides'}
-            </button>
+          <div className="text-[11px] text-slate-400 font-medium">
+            {engineMode === 'quad' ? (
+              <span className="text-purple-300 flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
+                Drag any of the 4 corner pins individually to fix perspective or skew
+              </span>
+            ) : (
+              <span className="text-blue-300">
+                Preset frame size: {targetWidth} × {targetHeight} mm ({preset.name})
+              </span>
+            )}
           </div>
         </div>
+
+        {engineMode === 'quad' ? (
+          <div className="p-4 flex-1 overflow-y-auto max-h-[620px]">
+            <FourCornerFreeCrop
+              imageSrc={imageSrc}
+              targetWidthMm={targetWidth}
+              targetHeightMm={targetHeight}
+              corners={corners}
+              onChangeCorners={setCorners}
+              onResetCorners={() => {
+                setCorners({
+                  tl: { x: 8, y: 6 },
+                  tr: { x: 92, y: 6 },
+                  br: { x: 92, y: 94 },
+                  bl: { x: 8, y: 94 },
+                });
+              }}
+              onAutoDetectCorners={handleAiAutoCrop}
+              isAiLoading={isAiLoading}
+            />
+          </div>
+        ) : (
+          <>
+            {/* Toolbar & Aspect Ratio Mode Selector */}
+            <div className="px-5 py-2.5 bg-slate-950/60 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+              {/* Aspect Ratio Selector Tabs */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-slate-400 font-semibold mr-1 flex items-center gap-1">
+                  <Sliders className="w-3.5 h-3.5 text-blue-400" /> Ratio:
+                </span>
+                <button
+                  onClick={() => handleRatioChange('preset')}
+                  className={`px-3 py-1.5 rounded-lg font-medium transition-all flex items-center gap-1 ${
+                    aspectMode === 'preset'
+                      ? 'bg-blue-600 text-white shadow-sm font-semibold'
+                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  <Lock className="w-3 h-3" />
+                  Locked ({targetWidth}×{targetHeight} mm)
+                </button>
+                <button
+                  onClick={() => handleRatioChange('free')}
+                  className={`px-3 py-1.5 rounded-lg font-medium transition-all flex items-center gap-1 ${
+                    aspectMode === 'free'
+                      ? 'bg-purple-600 text-white shadow-sm font-semibold'
+                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  <Unlock className="w-3 h-3" />
+                  Freeform Box Crop
+                </button>
+                <button
+                  onClick={() => handleRatioChange('1:1')}
+                  className={`px-2.5 py-1.5 rounded-lg font-medium transition-all ${
+                    aspectMode === '1:1'
+                      ? 'bg-blue-600 text-white shadow-sm font-semibold'
+                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  1:1 Square
+                </button>
+                <button
+                  onClick={() => handleRatioChange('3:4')}
+                  className={`px-2.5 py-1.5 rounded-lg font-medium transition-all ${
+                    aspectMode === '3:4'
+                      ? 'bg-blue-600 text-white shadow-sm font-semibold'
+                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  3:4 Portrait
+                </button>
+                <button
+                  onClick={maximizeCrop}
+                  className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center gap-1 font-medium"
+                  title="Fit to full area"
+                >
+                  <Maximize2 className="w-3 h-3" /> Maximize
+                </button>
+              </div>
+
+              {/* Quick AI & Guide Buttons */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleAiAutoCrop}
+                  disabled={isAiLoading}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold transition-all shadow-sm disabled:opacity-50"
+                >
+                  <Sparkles className={`w-3.5 h-3.5 ${isAiLoading ? 'animate-spin' : ''}`} />
+                  {isAiLoading ? 'Centering Face...' : 'AI Auto-Center'}
+                </button>
+
+                <button
+                  onClick={() => setShowBiometricGuide(!showBiometricGuide)}
+                  className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg font-medium transition-all border ${
+                    showBiometricGuide
+                      ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
+                      : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <User className="w-3.5 h-3.5" />
+                  {showBiometricGuide ? 'Hide Face Guides' : 'Face Guides'}
+                </button>
+              </div>
+            </div>
 
         {/* Workspace: Image Canvas + Fine-Tune Nudge Panel */}
         <div className="flex-1 flex flex-col lg:flex-row overflow-hidden min-h-[380px] max-h-[580px]">
@@ -769,13 +856,23 @@ export const PassportCropModal: React.FC<PassportCropModalProps> = ({
             </div>
           </div>
         </div>
+      </>
+    )}
 
         {/* Footer */}
         <div className="px-5 py-3 bg-slate-950 border-t border-slate-800 flex items-center justify-between flex-wrap gap-3">
           <div className="text-xs text-slate-400 flex items-center gap-2">
             <span className="inline-block w-2 h-2 rounded-full bg-emerald-400" />
-            Selection: {Math.round(cropBox.width)}% × {Math.round(cropBox.height)}% (
-            {aspectMode === 'free' ? 'Freeform Crop' : `${targetWidth}×${targetHeight} mm aspect`})
+            {engineMode === 'quad' ? (
+              <span>
+                4-Corner Mode: Custom Perspective Warp calibrated for {targetWidth}×{targetHeight} mm sheet slot
+              </span>
+            ) : (
+              <span>
+                Selection: {Math.round(cropBox.width)}% × {Math.round(cropBox.height)}% (
+                {aspectMode === 'free' ? 'Freeform Crop' : `${targetWidth}×${targetHeight} mm aspect`})
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-2.5">
@@ -787,13 +884,13 @@ export const PassportCropModal: React.FC<PassportCropModalProps> = ({
             </button>
             <button
               onClick={() => {
-                onApplyCrop(cropBox);
+                onApplyCrop(cropBox, engineMode === 'quad' ? corners : undefined);
                 onClose();
               }}
               className="inline-flex items-center gap-2 px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-xl shadow-lg transition-all"
             >
               <Check className="w-4 h-4" />
-              Apply Crop & Frame
+              {engineMode === 'quad' ? 'Apply 4-Corner Warp' : 'Apply Crop & Frame'}
             </button>
           </div>
         </div>

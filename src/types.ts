@@ -1,5 +1,17 @@
 export type StudioTab = 'passport' | 'idcard' | 'document' | 'print_preview';
 
+export interface Point2D {
+  x: number; // percentage (0 - 100) or pixels
+  y: number; // percentage (0 - 100) or pixels
+}
+
+export interface QuadCorners {
+  tl: Point2D;
+  tr: Point2D;
+  br: Point2D;
+  bl: Point2D;
+}
+
 export type PaperSizeId = 'a4' | '4x6' | '5x7' | 'letter' | '8x10' | 'single';
 
 export interface PaperSizeConfig {
@@ -44,6 +56,7 @@ export interface IDCardItem {
   dataUrl: string;
   fileName: string;
   cropBox?: { x: number; y: number; width: number; height: number }; // percentages
+  quadCorners?: QuadCorners; // 4-corner freeform crop
   rotation: number;
   brightness: number;
   contrast: number;
@@ -116,6 +129,7 @@ export interface DocumentItem {
   brightness: number;
   contrast: number;
   cropBox?: { x: number; y: number; width: number; height: number };
+  quadCorners?: QuadCorners; // 4-corner perspective crop
   scalePercent: number;
 }
 

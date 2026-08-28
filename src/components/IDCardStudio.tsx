@@ -43,6 +43,8 @@ import {
   Check,
   X,
   Wand2,
+  Plus,
+  Minus,
 } from 'lucide-react';
 
 import confetti from 'canvas-confetti';
@@ -126,6 +128,54 @@ export const IDCardStudio: React.FC = () => {
   // Card dimensions
   const cardWidthMm = selectedPreset.id === 'dl_custom' ? settings.customWidthMm : selectedPreset.widthMm;
   const cardHeightMm = selectedPreset.id === 'dl_custom' ? settings.customHeightMm : selectedPreset.heightMm;
+
+  // Global Clipboard Paste (Ctrl+V / Cmd+V)
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image') !== -1) {
+          const file = items[i].getAsFile();
+          if (file) {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+              const dataUrl = ev.target?.result as string;
+              const newItem: IDCardItem = {
+                id: `card-paste-${Date.now()}`,
+                side: !frontCard ? 'front' : 'back',
+                dataUrl,
+                fileName: 'Pasted Image.jpg',
+                rotation: 0,
+                brightness: 0,
+                contrast: 0,
+                saturation: 0,
+                sharpness: 0,
+                detectedSide: !frontCard ? 'front' : 'back',
+                detectedConfidence: 0.9,
+                detectedSummary: !frontCard ? 'Pasted Front Side' : 'Pasted Back Side',
+                isAmbiguous: false,
+              };
+
+              if (!frontCard) {
+                setFrontCard(newItem);
+                setActiveCropSide('front');
+              } else {
+                setBackCard(newItem);
+                setActiveCropSide('back');
+              }
+            };
+            reader.readAsDataURL(file);
+            break;
+          }
+        }
+      }
+    };
+
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [frontCard]);
 
   // Handle auto upload with AI detection & Ambiguity handling
   const handleAutoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -964,24 +1014,78 @@ export const IDCardStudio: React.FC = () => {
                 </div>
 
                 {settings.layoutMode === 'grid_multi' && (
-                  <div className="pt-2 flex items-center justify-between">
-                    <label className="text-xs font-medium text-slate-300">
-                      Number of ID Card Pairs
-                    </label>
-                    <div className="flex gap-1.5">
-                      {[1, 2, 4].map((cnt) => (
-                        <button
-                          key={cnt}
-                          onClick={() => setSettings((prev) => ({ ...prev, cardsCount: cnt }))}
-                          className={`px-3 py-1 rounded-lg text-xs font-medium border transition-all ${
-                            settings.cardsCount === cnt
-                              ? 'bg-emerald-600 text-white border-emerald-500 accent-glow-emerald font-bold'
-                              : 'glass-card text-slate-300 border-white/10 hover:bg-white/5'
-                          }`}
-                        >
-                          {cnt} Pair{cnt > 1 ? 's' : ''}
-                        </button>
-                      ))}
+                  <div className="pt-2 space-y-2 border-t border-white/10">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-medium text-slate-300">
+                        Manual ID Card Pairs on Sheet
+                      </label>
+                      <span className="text-xs font-mono font-bold text-emerald-300 bg-emerald-500/20 px-2 py-0.5 rounded-full border border-emerald-500/30">
+                        {settings.cardsCount} Pair{settings.cardsCount > 1 ? 's' : ''} ({(settings.cardsCount || 1) * 2} Cards)
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSettings((prev) => ({
+                            ...prev,
+                            cardsCount: Math.max(1, (prev.cardsCount || 1) - 1),
+                          }))
+                        }
+                        disabled={(settings.cardsCount || 1) <= 1}
+                        className="p-1.5 rounded-lg glass-card hover:bg-white/10 disabled:opacity-25 text-white border border-white/10"
+                      >
+                        <Minus className="w-3.5 h-3.5" />
+                      </button>
+
+                      <input
+                        type="number"
+                        min={1}
+                        max={6}
+                        value={settings.cardsCount || 1}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value, 10);
+                          if (!isNaN(val)) {
+                            setSettings((prev) => ({
+                              ...prev,
+                              cardsCount: Math.max(1, Math.min(val, 6)),
+                            }));
+                          }
+                        }}
+                        className="w-16 text-center py-1 bg-black/60 border border-emerald-500/40 rounded-lg text-xs font-bold text-white focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSettings((prev) => ({
+                            ...prev,
+                            cardsCount: Math.min(6, (prev.cardsCount || 1) + 1),
+                          }))
+                        }
+                        disabled={(settings.cardsCount || 1) >= 6}
+                        className="p-1.5 rounded-lg glass-card hover:bg-white/10 disabled:opacity-25 text-white border border-white/10"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
+
+                      <div className="flex gap-1 ml-auto">
+                        {[1, 2, 4].map((cnt) => (
+                          <button
+                            key={cnt}
+                            type="button"
+                            onClick={() => setSettings((prev) => ({ ...prev, cardsCount: cnt }))}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-all ${
+                              settings.cardsCount === cnt
+                                ? 'bg-emerald-600 text-white border-emerald-500 accent-glow-emerald font-bold'
+                                : 'glass-card text-slate-300 border-white/10 hover:bg-white/5'
+                            }`}
+                          >
+                            {cnt}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 )}

@@ -1,5 +1,5 @@
 import jsPDF from 'jspdf';
-import { PaperSizeConfig, PassportSettings, IDCardSettings, IDCardItem, DocumentItem, DocumentSettings } from '../types';
+import { PaperSizeConfig, PassportSettings, IDCardSettings, IDCardItem, DocumentItem, DocumentSettings, QuadCorners } from '../types';
 
 export const MM_TO_INCH = 1 / 25.4;
 export const PRINT_DPI = 300;
@@ -9,14 +9,177 @@ export function mmToPixels(mm: number, dpi: number = PRINT_DPI): number {
 }
 
 /**
- * Loads an image from DataURL or URL into an HTMLImageElement
+ * Warps a 4-point quadrilateral (TL, TR, BR, BL) from source image into a rectified target canvas
+ */
+export function warpPerspectiveCanvas(
+  sourceImg: HTMLImageElement | HTMLCanvasElement,
+  corners: QuadCorners,
+  targetWidthPx: number,
+  targetHeightPx: number,
+  isPercentage: boolean = true
+): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = targetWidthPx;
+  canvas.height = targetHeightPx;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas 2D context failed');
+
+  const sw = sourceImg.width;
+  const sh = sourceImg.height;
+
+  // Convert corners to pixel coordinates on source image
+  const tl = {
+    x: isPercentage ? (corners.tl.x / 100) * sw : corners.tl.x,
+    y: isPercentage ? (corners.tl.y / 100) * sh : corners.tl.y,
+  };
+  const tr = {
+    x: isPercentage ? (corners.tr.x / 100) * sw : corners.tr.x,
+    y: isPercentage ? (corners.tr.y / 100) * sh : corners.tr.y,
+  };
+  const br = {
+    x: isPercentage ? (corners.br.x / 100) * sw : corners.br.x,
+    y: isPercentage ? (corners.br.y / 100) * sh : corners.br.y,
+  };
+  const bl = {
+    x: isPercentage ? (corners.bl.x / 100) * sw : corners.bl.x,
+    y: isPercentage ? (corners.bl.y / 100) * sh : corners.bl.y,
+  };
+
+  const drawTriangle = (
+    c: CanvasRenderingContext2D,
+    img: HTMLImageElement | HTMLCanvasElement,
+    x0: number, y0: number,
+    x1: number, y1: number,
+    x2: number, y2: number,
+    u0: number, v0: number,
+    u1: number, v1: number,
+    u2: number, v2: number
+  ) => {
+    c.save();
+    c.beginPath();
+    c.moveTo(x0, y0);
+    c.lineTo(x1, y1);
+    c.lineTo(x2, y2);
+    c.closePath();
+    c.clip();
+
+    const denom = (u0 * (v1 - v2) - v0 * (u1 - u2) + (u1 * v2 - u2 * v1));
+    if (Math.abs(denom) < 1e-6) {
+      c.restore();
+      return;
+    }
+
+    const a = (x0 * (v1 - v2) - v0 * (x1 - x2) + (x1 * v2 - x2 * v1)) / denom;
+    const b = (y0 * (v1 - v2) - v0 * (y1 - y2) + (y1 * v2 - y2 * v1)) / denom;
+    const cVal = (u0 * (x1 - x2) - x0 * (u1 - u2) + (u1 * x2 - u2 * x1)) / denom;
+    const d = (u0 * (y1 - y2) - y0 * (u1 - u2) + (u1 * y2 - u2 * y1)) / denom;
+    const e = (u0 * (v1 * x2 - v2 * x1) - v0 * (u1 * x2 - u2 * x1) + x0 * (u1 * v2 - u2 * v1)) / denom;
+    const f = (u0 * (v1 * y2 - v2 * y1) - v0 * (u1 * y2 - u2 * y1) + y0 * (u1 * v2 - u2 * v1)) / denom;
+
+    c.transform(a, b, cVal, d, e, f);
+    c.drawImage(img, 0, 0);
+    c.restore();
+  };
+
+  const SUBDIVISIONS = 16;
+  const dw = targetWidthPx / SUBDIVISIONS;
+  const dh = targetHeightPx / SUBDIVISIONS;
+
+  const getSourcePoint = (u: number, v: number) => {
+    const topX = tl.x + (tr.x - tl.x) * u;
+    const topY = tl.y + (tr.y - tl.y) * u;
+    const botX = bl.x + (br.x - bl.x) * u;
+    const botY = bl.y + (br.y - bl.y) * u;
+    return {
+      x: topX + (botX - topX) * v,
+      y: topY + (botY - topY) * v,
+    };
+  };
+
+  for (let gy = 0; gy < SUBDIVISIONS; gy++) {
+    for (let gx = 0; gx < SUBDIVISIONS; gx++) {
+      const u0 = gx / SUBDIVISIONS;
+      const u1 = (gx + 1) / SUBDIVISIONS;
+      const v0 = gy / SUBDIVISIONS;
+      const v1 = (gy + 1) / SUBDIVISIONS;
+
+      const p00 = getSourcePoint(u0, v0);
+      const p10 = getSourcePoint(u1, v0);
+      const p01 = getSourcePoint(u0, v1);
+      const p11 = getSourcePoint(u1, v1);
+
+      const dx0 = gx * dw;
+      const dy0 = gy * dh;
+      const dx1 = (gx + 1) * dw;
+      const dy1 = (gy + 1) * dh;
+
+      // Triangle 1
+      drawTriangle(
+        ctx, sourceImg,
+        dx0, dy0, dx1, dy0, dx0, dy1,
+        p00.x, p00.y, p10.x, p10.y, p01.x, p01.y
+      );
+
+      // Triangle 2
+      drawTriangle(
+        ctx, sourceImg,
+        dx1, dy0, dx1, dy1, dx0, dy1,
+        p10.x, p10.y, p11.x, p11.y, p01.x, p01.y
+      );
+    }
+  }
+
+  return canvas;
+}
+
+/**
+ * Loads an image from DataURL, Blob, or URL into an HTMLImageElement safely
  */
 export function loadImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
+    if (!src) {
+      const fallbackImg = new Image();
+      fallbackImg.onload = () => resolve(fallbackImg);
+      fallbackImg.src = `data:image/svg+xml;utf8,${encodeURIComponent(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="750"><rect width="100%" height="100%" fill="#f1f5f9"/><text x="50%" y="50%" fill="#64748b" text-anchor="middle" font-family="sans-serif" font-size="24">No Image</text></svg>'
+      )}`;
+      return;
+    }
+
+    const isDataOrBlob = src.startsWith('data:') || src.startsWith('blob:');
     const img = new Image();
-    img.crossOrigin = 'anonymous';
+
+    // For data or blob URLs, avoid crossOrigin header which can cause browser security errors
+    if (!isDataOrBlob) {
+      img.crossOrigin = 'anonymous';
+    }
+
     img.onload = () => resolve(img);
-    img.onerror = (e) => reject(new Error('Failed to load image: ' + e));
+
+    img.onerror = () => {
+      // If anonymous CORS failed on a remote URL, retry without crossOrigin
+      if (img.crossOrigin && !isDataOrBlob) {
+        const retryImg = new Image();
+        retryImg.onload = () => resolve(retryImg);
+        retryImg.onerror = () => {
+          console.warn('Image failed to load via URL, using vector placeholder fallback');
+          const fallbackImg = new Image();
+          fallbackImg.onload = () => resolve(fallbackImg);
+          fallbackImg.src = `data:image/svg+xml;utf8,${encodeURIComponent(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="750"><rect width="100%" height="100%" fill="#e2e8f0"/><circle cx="300" cy="280" r="120" fill="#cbd5e1"/><path d="M160 560 C160 440, 440 440, 440 560 Z" fill="#cbd5e1"/><text x="300" y="650" fill="#64748b" text-anchor="middle" font-family="sans-serif" font-size="22" font-weight="bold">Photo Sample</text></svg>'
+          )}`;
+        };
+        retryImg.src = src;
+      } else {
+        console.warn('Image failed to load, using vector placeholder fallback');
+        const fallbackImg = new Image();
+        fallbackImg.onload = () => resolve(fallbackImg);
+        fallbackImg.src = `data:image/svg+xml;utf8,${encodeURIComponent(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="750"><rect width="100%" height="100%" fill="#e2e8f0"/><circle cx="300" cy="280" r="120" fill="#cbd5e1"/><path d="M160 560 C160 440, 440 440, 440 560 Z" fill="#cbd5e1"/><text x="300" y="650" fill="#64748b" text-anchor="middle" font-family="sans-serif" font-size="22" font-weight="bold">Photo Sample</text></svg>'
+        )}`;
+      }
+    };
+
     img.src = src;
   });
 }
@@ -189,14 +352,15 @@ export async function removeImageBackground(
 }
 
 /**
- * Applies adjustments (brightness, contrast, saturation, sharpness, background color) and crops to target aspect ratio
+ * Applies adjustments (brightness, contrast, saturation, sharpness, background color) and crops to target aspect ratio (supports cropBox or 4-corner quadCorners)
  */
 export async function processPassportImage(
   imageSrc: string,
   settings: PassportSettings,
   targetWidthMm: number,
   targetHeightMm: number,
-  cropBox?: { x: number; y: number; width: number; height: number } // percentages
+  cropBox?: { x: number; y: number; width: number; height: number }, // percentages
+  quadCorners?: QuadCorners
 ): Promise<string> {
   const img = await loadImage(imageSrc);
   const canvas = document.createElement('canvas');
@@ -219,30 +383,6 @@ export async function processPassportImage(
     ctx.fillRect(0, 0, targetPxWidth, targetPxHeight);
   }
 
-  // Calculate source crop region
-  let sx = 0;
-  let sy = 0;
-  let sWidth = img.width;
-  let sHeight = img.height;
-
-  if (cropBox) {
-    sx = (cropBox.x / 100) * img.width;
-    sy = (cropBox.y / 100) * img.height;
-    sWidth = (cropBox.width / 100) * img.width;
-    sHeight = (cropBox.height / 100) * img.height;
-  } else {
-    // Auto-fit to center with target aspect ratio
-    const targetAspect = targetWidthMm / targetHeightMm;
-    const imgAspect = img.width / img.height;
-    if (imgAspect > targetAspect) {
-      sWidth = img.height * targetAspect;
-      sx = (img.width - sWidth) / 2;
-    } else {
-      sHeight = img.width / targetAspect;
-      sy = (img.height - sHeight) / 2;
-    }
-  }
-
   // Draw filtered image on temporary offscreen canvas
   const offscreen = document.createElement('canvas');
   offscreen.width = targetPxWidth;
@@ -256,7 +396,37 @@ export async function processPassportImage(
   const s = 100 + (settings.saturation || 0);
   offCtx.filter = `brightness(${b}%) contrast(${c}%) saturate(${s}%)`;
 
-  offCtx.drawImage(img, sx, sy, sWidth, sHeight, 0, 0, targetPxWidth, targetPxHeight);
+  if (quadCorners) {
+    // 4-Corner free perspective warp
+    const warpedCanvas = warpPerspectiveCanvas(img, quadCorners, targetPxWidth, targetPxHeight);
+    offCtx.drawImage(warpedCanvas, 0, 0);
+  } else {
+    // Calculate source crop region
+    let sx = 0;
+    let sy = 0;
+    let sWidth = img.width;
+    let sHeight = img.height;
+
+    if (cropBox) {
+      sx = (cropBox.x / 100) * img.width;
+      sy = (cropBox.y / 100) * img.height;
+      sWidth = (cropBox.width / 100) * img.width;
+      sHeight = (cropBox.height / 100) * img.height;
+    } else {
+      // Auto-fit to center with target aspect ratio
+      const targetAspect = targetWidthMm / targetHeightMm;
+      const imgAspect = img.width / img.height;
+      if (imgAspect > targetAspect) {
+        sWidth = img.height * targetAspect;
+        sx = (img.width - sWidth) / 2;
+      } else {
+        sHeight = img.width / targetAspect;
+        sy = (img.height - sHeight) / 2;
+      }
+    }
+
+    offCtx.drawImage(img, sx, sy, sWidth, sHeight, 0, 0, targetPxWidth, targetPxHeight);
+  }
 
   // If background removal / replacement requested (simple chroma-key or background blend)
   if (settings.backgroundColor && settings.backgroundColor !== 'original') {
@@ -318,19 +488,6 @@ export async function processIDCardItem(
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, targetPxWidth, targetPxHeight);
 
-  // Calculate crop source
-  let sx = 0;
-  let sy = 0;
-  let sWidth = img.width;
-  let sHeight = img.height;
-
-  if (card.cropBox) {
-    sx = (card.cropBox.x / 100) * img.width;
-    sy = (card.cropBox.y / 100) * img.height;
-    sWidth = (card.cropBox.width / 100) * img.width;
-    sHeight = (card.cropBox.height / 100) * img.height;
-  }
-
   // Handle rounded corners clipping if specified
   if (cornerRadiusMm > 0) {
     const rPx = mmToPixels(cornerRadiusMm, 300);
@@ -355,12 +512,36 @@ export async function processIDCardItem(
   const s = 100 + (card.saturation || 0);
   ctx.filter = `brightness(${b}%) contrast(${c}%) saturate(${s}%)`;
 
-  if (card.rotation && card.rotation !== 0) {
-    ctx.translate(targetPxWidth / 2, targetPxHeight / 2);
-    ctx.rotate((card.rotation * Math.PI) / 180);
-    ctx.drawImage(img, sx, sy, sWidth, sHeight, -targetPxWidth / 2, -targetPxHeight / 2, targetPxWidth, targetPxHeight);
+  if (card.quadCorners) {
+    const warpedCanvas = warpPerspectiveCanvas(img, card.quadCorners, targetPxWidth, targetPxHeight);
+    if (card.rotation && card.rotation !== 0) {
+      ctx.translate(targetPxWidth / 2, targetPxHeight / 2);
+      ctx.rotate((card.rotation * Math.PI) / 180);
+      ctx.drawImage(warpedCanvas, -targetPxWidth / 2, -targetPxHeight / 2, targetPxWidth, targetPxHeight);
+    } else {
+      ctx.drawImage(warpedCanvas, 0, 0, targetPxWidth, targetPxHeight);
+    }
   } else {
-    ctx.drawImage(img, sx, sy, sWidth, sHeight, 0, 0, targetPxWidth, targetPxHeight);
+    // Calculate crop source
+    let sx = 0;
+    let sy = 0;
+    let sWidth = img.width;
+    let sHeight = img.height;
+
+    if (card.cropBox) {
+      sx = (card.cropBox.x / 100) * img.width;
+      sy = (card.cropBox.y / 100) * img.height;
+      sWidth = (card.cropBox.width / 100) * img.width;
+      sHeight = (card.cropBox.height / 100) * img.height;
+    }
+
+    if (card.rotation && card.rotation !== 0) {
+      ctx.translate(targetPxWidth / 2, targetPxHeight / 2);
+      ctx.rotate((card.rotation * Math.PI) / 180);
+      ctx.drawImage(img, sx, sy, sWidth, sHeight, -targetPxWidth / 2, -targetPxHeight / 2, targetPxWidth, targetPxHeight);
+    } else {
+      ctx.drawImage(img, sx, sy, sWidth, sHeight, 0, 0, targetPxWidth, targetPxHeight);
+    }
   }
   ctx.restore();
 
@@ -396,27 +577,40 @@ export async function renderPassportSheetCanvas(
   const photoHeightPx = mmToPixels(photoHeightMm, 300);
   const gapPx = mmToPixels(settings.gapMm ?? 2, 300);
 
-  // Compute maximum columns and rows that fit
-  const availableWidthMm = paper.widthMm;
-  const availableHeightMm = paper.heightMm;
+  // Compute maximum columns and rows that can physically fit on the paper
+  const maxCols = Math.max(1, Math.floor((paper.widthMm - 6 + settings.gapMm) / (photoWidthMm + settings.gapMm)));
+  const maxRows = Math.max(1, Math.floor((paper.heightMm - 6 + settings.gapMm) / (photoHeightMm + settings.gapMm)));
+  const maxCapacity = maxCols * maxRows;
 
-  let cols = Math.floor((availableWidthMm + settings.gapMm) / (photoWidthMm + settings.gapMm));
-  let rows = Math.floor((availableHeightMm + settings.gapMm) / (photoHeightMm + settings.gapMm));
+  // Ensure requested count is at least 1 and capped at maxCapacity
+  const countToDraw = Math.min(Math.max(1, Number(settings.photoCount) || 1), maxCapacity);
 
-  // If paper is A4 and count is 36, use a balanced 6 columns x 6 rows grid
-  if (paper.id === 'a4' && settings.photoCount >= 36) {
+  // Determine optimal column arrangement based on count requested
+  let cols = maxCols;
+  if (countToDraw === 6) {
+    // When 6 photos are selected, arrange all 6 photos in ONE single row!
     cols = 6;
-    rows = 6;
+  } else if (paper.id === 'a4' && countToDraw >= 36) {
+    cols = 6;
   } else if (paper.id === '4x6') {
-    cols = Math.min(cols, 4);
-    rows = Math.min(rows, 2);
+    cols = Math.min(maxCols, countToDraw <= 2 ? countToDraw : (countToDraw <= 4 ? 2 : 4));
+  } else if (countToDraw <= 2) {
+    cols = countToDraw;
+  } else if (countToDraw <= 4) {
+    cols = Math.min(maxCols, 2);
+  } else if (countToDraw <= 8) {
+    cols = Math.min(maxCols, 4);
+  } else if (countToDraw <= 16) {
+    cols = Math.min(maxCols, 4);
+  } else {
+    cols = maxCols;
   }
 
-  const totalGridCapacity = cols * rows;
-  const countToDraw = Math.min(settings.photoCount, totalGridCapacity);
+  const rows = Math.ceil(countToDraw / cols);
+  const activeColsInFullRows = countToDraw >= cols ? cols : countToDraw;
 
   // Center the grid on the sheet or use custom margins
-  const totalGridWidthPx = cols * photoWidthPx + (cols - 1) * gapPx;
+  const totalGridWidthPx = activeColsInFullRows * photoWidthPx + (activeColsInFullRows - 1) * gapPx;
   const totalGridHeightPx = rows * photoHeightPx + (rows - 1) * gapPx;
 
   const startXPx = settings.marginLeftMm > 0
@@ -637,28 +831,18 @@ export async function renderIDCardSheetCanvas(
 }
 
 /**
- * Process document item with adaptive B&W photocopy / magic color / grayscale & cropBox
+ * Process document item with adaptive B&W photocopy / magic color / grayscale & cropBox / 4-corner quadCorners
  */
 export async function processDocumentItem(doc: DocumentItem): Promise<string> {
   const img = await loadImage(doc.dataUrl);
 
   // Compute crop box source coordinates
-  let sx = 0;
-  let sy = 0;
   let sWidth = img.width;
   let sHeight = img.height;
 
   if (doc.cropBox) {
-    sx = (doc.cropBox.x / 100) * img.width;
-    sy = (doc.cropBox.y / 100) * img.height;
-    sWidth = (doc.cropBox.width / 100) * img.width;
-    sHeight = (doc.cropBox.height / 100) * img.height;
-
-    // Safety clamping
-    sx = Math.max(0, Math.min(img.width - 1, sx));
-    sy = Math.max(0, Math.min(img.height - 1, sy));
-    sWidth = Math.max(1, Math.min(img.width - sx, sWidth));
-    sHeight = Math.max(1, Math.min(img.height - sy, sHeight));
+    sWidth = Math.max(1, Math.round((doc.cropBox.width / 100) * img.width));
+    sHeight = Math.max(1, Math.round((doc.cropBox.height / 100) * img.height));
   }
 
   const canvas = document.createElement('canvas');
@@ -666,6 +850,11 @@ export async function processDocumentItem(doc: DocumentItem): Promise<string> {
   canvas.height = sHeight;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Canvas context failed');
+
+  let baseCanvas: HTMLCanvasElement | HTMLImageElement = img;
+  if (doc.quadCorners) {
+    baseCanvas = warpPerspectiveCanvas(img, doc.quadCorners, sWidth, sHeight);
+  }
 
   // Handle rotation
   if (doc.rotation && doc.rotation !== 0) {
@@ -675,9 +864,21 @@ export async function processDocumentItem(doc: DocumentItem): Promise<string> {
     }
     ctx.translate(canvas.width / 2, canvas.height / 2);
     ctx.rotate((doc.rotation * Math.PI) / 180);
-    ctx.drawImage(img, sx, sy, sWidth, sHeight, -sWidth / 2, -sHeight / 2, sWidth, sHeight);
+    if (doc.quadCorners) {
+      ctx.drawImage(baseCanvas, -sWidth / 2, -sHeight / 2, sWidth, sHeight);
+    } else {
+      let sx = doc.cropBox ? (doc.cropBox.x / 100) * img.width : 0;
+      let sy = doc.cropBox ? (doc.cropBox.y / 100) * img.height : 0;
+      ctx.drawImage(img, sx, sy, sWidth, sHeight, -sWidth / 2, -sHeight / 2, sWidth, sHeight);
+    }
   } else {
-    ctx.drawImage(img, sx, sy, sWidth, sHeight, 0, 0, sWidth, sHeight);
+    if (doc.quadCorners) {
+      ctx.drawImage(baseCanvas, 0, 0, sWidth, sHeight);
+    } else {
+      let sx = doc.cropBox ? (doc.cropBox.x / 100) * img.width : 0;
+      let sy = doc.cropBox ? (doc.cropBox.y / 100) * img.height : 0;
+      ctx.drawImage(img, sx, sy, sWidth, sHeight, 0, 0, sWidth, sHeight);
+    }
   }
 
   // Filters

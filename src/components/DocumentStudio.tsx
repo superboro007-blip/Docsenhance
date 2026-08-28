@@ -27,7 +27,55 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
-const SAMPLE_DOC_URL = 'https://images.unsplash.com/photo-1586281380349-632531db7ed4?auto=format&fit=crop&w=1000&q=80';
+const SAMPLE_DOC_URL = `data:image/svg+xml;utf8,${encodeURIComponent(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1100" width="800" height="1100">
+  <defs>
+    <linearGradient id="docGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#f8fafc" />
+    </linearGradient>
+  </defs>
+  <!-- Paper Base -->
+  <rect width="800" height="1100" fill="url(#docGrad)" stroke="#cbd5e1" stroke-width="2" />
+  <!-- Border Frame -->
+  <rect x="35" y="35" width="730" height="1030" fill="none" stroke="#1e3a8a" stroke-width="4" />
+  <rect x="45" y="45" width="710" height="1010" fill="none" stroke="#93c5fd" stroke-width="1.5" />
+  <!-- Header Emblem / Seal -->
+  <circle cx="400" cy="120" r="45" fill="#fef08a" stroke="#ca8a04" stroke-width="2.5" />
+  <polygon points="400,90 410,115 435,115 415,130 422,155 400,140 378,155 385,130 365,115 390,115" fill="#ca8a04" />
+  <!-- Title -->
+  <text x="400" y="210" fill="#0f172a" font-family="serif" font-size="28" font-weight="bold" text-anchor="middle" letter-spacing="2">CERTIFICATE OF VERIFICATION</text>
+  <text x="400" y="240" fill="#64748b" font-family="sans-serif" font-size="14" text-anchor="middle" letter-spacing="4">OFFICIAL RECORD &amp; IDENTIFICATION ARCHIVE</text>
+  <line x1="150" y1="260" x2="650" y2="260" stroke="#cbd5e1" stroke-width="1.5" />
+  <!-- Body Paragraph Mock Text Lines -->
+  <text x="80" y="320" fill="#334155" font-family="serif" font-size="16" font-style="italic">To Whom It May Concern,</text>
+  <text x="80" y="360" fill="#1e293b" font-family="sans-serif" font-size="15">This document officially certifies and confirms the registration and authentication</text>
+  <text x="80" y="390" fill="#1e293b" font-family="sans-serif" font-size="15">of the individual credentials referenced herein under Document Reference Series:</text>
+  <!-- Highlighting Box -->
+  <rect x="80" y="420" width="640" height="70" rx="8" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" />
+  <text x="110" y="450" fill="#64748b" font-family="sans-serif" font-size="12" font-weight="bold">IDENTIFICATION IDENTIFIER</text>
+  <text x="110" y="475" fill="#0f172a" font-family="monospace" font-size="20" font-weight="bold">REF-ID-2026-9812-7041</text>
+  <text x="450" y="450" fill="#64748b" font-family="sans-serif" font-size="12" font-weight="bold">STATUS</text>
+  <text x="450" y="475" fill="#15803d" font-family="sans-serif" font-size="18" font-weight="bold">✓ VERIFIED &amp; ACTIVE</text>
+  <!-- Text Lines -->
+  <g fill="#475569">
+    <rect x="80" y="530" width="640" height="8" rx="4" />
+    <rect x="80" y="555" width="600" height="8" rx="4" />
+    <rect x="80" y="580" width="620" height="8" rx="4" />
+    <rect x="80" y="605" width="540" height="8" rx="4" />
+    <rect x="80" y="650" width="640" height="8" rx="4" />
+    <rect x="80" y="675" width="580" height="8" rx="4" />
+    <rect x="80" y="700" width="610" height="8" rx="4" />
+  </g>
+  <!-- Official Red Seal -->
+  <circle cx="200" cy="880" r="60" fill="#fee2e2" stroke="#dc2626" stroke-width="3" stroke-dasharray="6,4" />
+  <text x="200" y="875" fill="#b91c1c" font-family="sans-serif" font-size="12" font-weight="bold" text-anchor="middle">OFFICIAL SEAL</text>
+  <text x="200" y="895" fill="#b91c1c" font-family="sans-serif" font-size="10" font-weight="bold" text-anchor="middle">AUTHORIZED</text>
+  <!-- Signatures -->
+  <line x1="450" y1="910" x2="680" y2="910" stroke="#334155" stroke-width="1.5" />
+  <text x="470" y="895" fill="#1e3a8a" font-family="cursive" font-size="28" font-style="italic">J. R. Vance</text>
+  <text x="565" y="930" fill="#64748b" font-family="sans-serif" font-size="12" font-weight="bold" text-anchor="middle">CHIEF REGISTRAR GENERAL</text>
+</svg>`)}`;
 
 export const DocumentStudio: React.FC = () => {
   const [documents, setDocuments] = useState<DocumentItem[]>([
@@ -61,6 +109,43 @@ export const DocumentStudio: React.FC = () => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const currentDoc = documents[selectedDocIndex] || documents[0];
+
+  // Global Clipboard Paste (Ctrl+V / Cmd+V)
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image') !== -1) {
+          const file = items[i].getAsFile();
+          if (file) {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+              const dataUrl = ev.target?.result as string;
+              const newDoc: DocumentItem = {
+                id: `doc-paste-${Date.now()}`,
+                title: `Pasted Document ${documents.length + 1}`,
+                dataUrl,
+                filterMode: 'magic_color',
+                rotation: 0,
+                brightness: 0,
+                contrast: 0,
+                scalePercent: 100,
+              };
+              setDocuments((prev) => [...prev, newDoc]);
+              setSelectedDocIndex(documents.length);
+            };
+            reader.readAsDataURL(file);
+            break;
+          }
+        }
+      }
+    };
+
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [documents.length]);
 
   // Update processed document preview reactively whenever document properties change
   useEffect(() => {

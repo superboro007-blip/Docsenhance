@@ -3,6 +3,7 @@ import {
   PassportPreset,
   PassportSettings,
   PaperSizeConfig,
+  QuadCorners,
 } from '../types';
 import {
   PASSPORT_PRESETS,
@@ -34,6 +35,11 @@ import {
   Info,
   Maximize2,
   Wand2,
+  Plus,
+  Minus,
+  Copy,
+  Hash,
+  ClipboardPaste,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -68,13 +74,14 @@ export const PassportStudio: React.FC<PassportStudioProps> = () => {
   });
 
   const [cropBox, setCropBox] = useState<{ x: number; y: number; width: number; height: number } | undefined>(undefined);
+  const [quadCorners, setQuadCorners] = useState<QuadCorners | undefined>(undefined);
   const [isCropModalOpen, setIsCropModalOpen] = useState(false);
   const [isBgRemovalOpen, setIsBgRemovalOpen] = useState(false);
   const [isWebcamOpen, setIsWebcamOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [sheetPreviewUrl, setSheetPreviewUrl] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'presets' | 'adjustments' | 'layout'>('presets');
-
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lastRenderedCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -85,6 +92,35 @@ export const PassportStudio: React.FC<PassportStudioProps> = () => {
       setRawImage(SAMPLE_PORTRAIT_URL);
     }
   }, [rawImage]);
+
+  // Global Clipboard Paste (Ctrl+V / Cmd+V) for instant desktop copy-paste
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image') !== -1) {
+          const file = items[i].getAsFile();
+          if (file) {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+              const dataUrl = ev.target?.result as string;
+              setRawImage(dataUrl);
+              setCropBox(undefined);
+              setQuadCorners(undefined);
+              setIsCropModalOpen(true);
+            };
+            reader.readAsDataURL(file);
+            break;
+          }
+        }
+      }
+    };
+
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, []);
 
   // When preset changes, sync dimensions
   const handlePresetChange = (preset: PassportPreset) => {
@@ -117,7 +153,7 @@ export const PassportStudio: React.FC<PassportStudioProps> = () => {
         const widthMm = selectedPreset.id === 'custom_photo' ? settings.customWidthMm : selectedPreset.widthMm;
         const heightMm = selectedPreset.id === 'custom_photo' ? settings.customHeightMm : selectedPreset.heightMm;
 
-        const processedUrl = await processPassportImage(rawImage, settings, widthMm, heightMm, cropBox);
+        const processedUrl = await processPassportImage(rawImage, settings, widthMm, heightMm, cropBox, quadCorners);
         if (isMounted) {
           setProcessedPhotoUrl(processedUrl);
 
@@ -144,7 +180,7 @@ export const PassportStudio: React.FC<PassportStudioProps> = () => {
     return () => {
       isMounted = false;
     };
-  }, [rawImage, selectedPreset, selectedPaper, settings, cropBox]);
+  }, [rawImage, selectedPreset, selectedPaper, settings, cropBox, quadCorners]);
 
   // File Upload Handler
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -225,6 +261,10 @@ export const PassportStudio: React.FC<PassportStudioProps> = () => {
 
   const currentWidthMm = selectedPreset.id === 'custom_photo' ? settings.customWidthMm : selectedPreset.widthMm;
   const currentHeightMm = selectedPreset.id === 'custom_photo' ? settings.customHeightMm : selectedPreset.heightMm;
+
+  const maxColsFit = Math.max(1, Math.floor((selectedPaper.widthMm - 6 + settings.gapMm) / (currentWidthMm + settings.gapMm)));
+  const maxRowsFit = Math.max(1, Math.floor((selectedPaper.heightMm - 6 + settings.gapMm) / (currentHeightMm + settings.gapMm)));
+  const maxPossiblePhotos = maxColsFit * maxRowsFit;
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
@@ -529,44 +569,191 @@ export const PassportStudio: React.FC<PassportStudioProps> = () => {
                   </div>
                 </div>
 
-                {/* 36-Photo Grid Selector */}
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                      <Grid className="w-3.5 h-3.5 text-blue-400" />
-                      Number of Photos on Sheet
+                {/* Manual & Preset Photo Copies on Sheet */}
+                <div className="space-y-3 bg-black/30 p-3.5 rounded-xl border border-white/10">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                      <Copy className="w-3.5 h-3.5 text-blue-400" />
+                      Number of Copies on Sheet
                     </label>
-                    <span className="text-xs font-bold text-blue-300 bg-blue-500/20 px-2 py-0.5 rounded-full border border-blue-500/30">
-                      {settings.photoCount} Photos
+                    <span className="text-xs font-bold text-emerald-300 bg-emerald-500/20 px-2 py-0.5 rounded-full border border-emerald-500/30 font-mono">
+                      {settings.photoCount} / {maxPossiblePhotos} Max
                     </span>
                   </div>
 
-                  {/* Preset Count Buttons with 36 Photos emphasized */}
-                  <div className="grid grid-cols-4 gap-1.5 mb-2">
-                    {[6, 8, 12, 16, 24, 30, 36, 42].map((cnt) => (
+                  {/* Manual Entry Number Input + Stepper Controls */}
+                  <div>
+                    <span className="text-[11px] text-slate-400 block mb-1.5">
+                      Manual Copies Entry:
+                    </span>
+                    <div className="flex items-center gap-1.5">
                       <button
-                        key={cnt}
-                        onClick={() => setSettings((prev) => ({ ...prev, photoCount: cnt }))}
-                        className={`py-1.5 px-2 rounded-lg text-xs font-medium border transition-all ${
-                          settings.photoCount === cnt
-                            ? cnt === 36
-                              ? 'bg-emerald-600 border-emerald-500 text-white font-bold accent-glow-emerald'
-                              : 'bg-blue-600 border-blue-500 text-white font-bold accent-glow'
-                            : cnt === 36
-                            ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 font-semibold hover:bg-emerald-500/25'
-                            : 'border-white/10 hover:bg-white/5 text-slate-300'
-                        }`}
+                        type="button"
+                        onClick={() =>
+                          setSettings((prev) => ({
+                            ...prev,
+                            photoCount: Math.max(1, prev.photoCount - 5),
+                          }))
+                        }
+                        disabled={settings.photoCount <= 1}
+                        className="px-2 py-1.5 rounded-lg glass-card hover:bg-white/10 disabled:opacity-30 text-[11px] font-semibold text-slate-300 border border-white/10"
+                        title="Decrease 5 copies"
                       >
-                        {cnt} {cnt === 36 ? '★ 36 (A4)' : ''}
+                        -5
                       </button>
-                    ))}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSettings((prev) => ({
+                            ...prev,
+                            photoCount: Math.max(1, prev.photoCount - 1),
+                          }))
+                        }
+                        disabled={settings.photoCount <= 1}
+                        className="p-1.5 rounded-lg glass-card hover:bg-white/10 disabled:opacity-30 text-slate-300 border border-white/10"
+                        title="Decrease 1 copy"
+                      >
+                        <Minus className="w-3.5 h-3.5" />
+                      </button>
+
+                      <div className="relative flex-1">
+                        <input
+                          type="number"
+                          min={1}
+                          max={maxPossiblePhotos}
+                          value={settings.photoCount}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            if (!isNaN(val)) {
+                              setSettings((prev) => ({
+                                ...prev,
+                                photoCount: Math.max(1, Math.min(val, maxPossiblePhotos)),
+                              }));
+                            }
+                          }}
+                          className="w-full text-center py-1.5 px-3 bg-black/60 border border-blue-500/40 rounded-lg text-sm font-bold text-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+                          placeholder="Copies"
+                        />
+                        <span className="absolute right-2 top-2 text-[10px] text-slate-400 font-mono pointer-events-none">
+                          pcs
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSettings((prev) => ({
+                            ...prev,
+                            photoCount: Math.min(maxPossiblePhotos, prev.photoCount + 1),
+                          }))
+                        }
+                        disabled={settings.photoCount >= maxPossiblePhotos}
+                        className="p-1.5 rounded-lg glass-card hover:bg-white/10 disabled:opacity-30 text-slate-300 border border-white/10"
+                        title="Increase 1 copy"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSettings((prev) => ({
+                            ...prev,
+                            photoCount: Math.min(maxPossiblePhotos, prev.photoCount + 5),
+                          }))
+                        }
+                        disabled={settings.photoCount >= maxPossiblePhotos}
+                        className="px-2 py-1.5 rounded-lg glass-card hover:bg-white/10 disabled:opacity-30 text-[11px] font-semibold text-slate-300 border border-white/10"
+                        title="Increase 5 copies"
+                      >
+                        +5
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSettings((prev) => ({
+                            ...prev,
+                            photoCount: maxPossiblePhotos,
+                          }))
+                        }
+                        className="px-2.5 py-1.5 rounded-lg bg-blue-600/80 hover:bg-blue-500 text-white text-[11px] font-bold border border-blue-400/40 transition-colors shadow-sm shrink-0"
+                        title="Fill sheet to maximum fit"
+                      >
+                        Max ({maxPossiblePhotos})
+                      </button>
+                    </div>
                   </div>
 
-                  {selectedPaper.id === 'a4' && (
-                    <p className="text-[11px] text-emerald-300 bg-emerald-500/10 p-2.5 rounded-lg border border-emerald-500/20">
-                      ✓ <strong>36 Passport Photos</strong> generated as 6 columns × 6 rows on standard A4 paper with precision border cut marks.
-                    </p>
-                  )}
+                  {/* Range Slider for immediate visual sweep */}
+                  <div>
+                    <input
+                      type="range"
+                      min="1"
+                      max={maxPossiblePhotos}
+                      value={settings.photoCount}
+                      onChange={(e) =>
+                        setSettings((prev) => ({
+                          ...prev,
+                          photoCount: Number(e.target.value) || 1,
+                        }))
+                      }
+                      className="w-full accent-blue-500 cursor-pointer"
+                    />
+                  </div>
+
+                  {/* Preset Quick Chips */}
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-1.5">
+                      Popular Print Presets:
+                    </span>
+                    <div className="grid grid-cols-5 gap-1.5">
+                      {[1, 2, 4, 6, 8, 12, 16, 24, 30, 36].map((cnt) => {
+                        const isOver = cnt > maxPossiblePhotos;
+                        return (
+                          <button
+                            key={cnt}
+                            type="button"
+                            disabled={isOver}
+                            onClick={() =>
+                              setSettings((prev) => ({ ...prev, photoCount: cnt }))
+                            }
+                            className={`py-1 px-1.5 rounded-lg text-xs font-medium border transition-all ${
+                              settings.photoCount === cnt
+                                ? cnt === 36
+                                  ? 'bg-emerald-600 border-emerald-500 text-white font-bold accent-glow-emerald'
+                                  : cnt === 6
+                                  ? 'bg-blue-600 border-blue-400 text-white font-bold ring-2 ring-blue-400/40 accent-glow'
+                                  : 'bg-blue-600 border-blue-500 text-white font-bold accent-glow'
+                                : isOver
+                                ? 'opacity-30 border-white/5 text-slate-500 cursor-not-allowed'
+                                : cnt === 36
+                                ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 font-semibold hover:bg-emerald-500/25'
+                                : cnt === 6
+                                ? 'bg-blue-500/15 border-blue-500/40 text-blue-300 font-semibold hover:bg-blue-500/25'
+                                : 'border-white/10 hover:bg-white/5 text-slate-300'
+                            }`}
+                          >
+                            {cnt} {cnt === 6 ? '(1 Row)' : cnt === 36 ? '★ 36' : ''}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Dynamic Layout Info */}
+                  <div className="p-2.5 bg-slate-900/80 rounded-xl border border-white/10 text-[11px] text-slate-300 flex items-start gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                    <div>
+                      {settings.photoCount === 6 ? (
+                        <span>
+                          Arranging <strong className="text-white">6 photos in 1 single horizontal row</strong> (1 × 6 strip) centered on <strong>{selectedPaper.name}</strong>.
+                        </span>
+                      ) : (
+                        <span>
+                          Rendering <strong className="text-white">{settings.photoCount} photo {settings.photoCount === 1 ? 'copy' : 'copies'}</strong> ({Math.min(maxColsFit, settings.photoCount <= 6 ? settings.photoCount : 6)} cols × {Math.ceil(settings.photoCount / (settings.photoCount >= 36 ? 6 : Math.min(maxColsFit, 6)))} rows) centered on <strong>{selectedPaper.name}</strong>.
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 {/* Spacing & Cutting Marks */}
@@ -710,13 +897,69 @@ export const PassportStudio: React.FC<PassportStudioProps> = () => {
           <div className="glass-card rounded-2xl p-5 border border-white/10 shadow-lg flex flex-col items-center">
             {/* Sheet Header Banner */}
             <div className="w-full flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-white/10">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2.5 flex-wrap">
                 <span className="text-xs font-bold text-slate-200 uppercase tracking-wider">
-                  Live Print Sheet Preview
+                  Live Sheet Preview
                 </span>
-                <span className="text-xs bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold px-2.5 py-0.5 rounded-full">
-                  {settings.photoCount} Photos Grid
-                </span>
+
+                {/* Quick Interactive Copies Stepper in Header */}
+                <div className="flex items-center gap-1 bg-black/40 px-2 py-0.5 rounded-lg border border-white/15">
+                  <span className="text-[10px] text-slate-400 font-semibold uppercase">Copies:</span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSettings((prev) => ({
+                        ...prev,
+                        photoCount: Math.max(1, prev.photoCount - 1),
+                      }))
+                    }
+                    disabled={settings.photoCount <= 1}
+                    className="w-5 h-5 rounded bg-white/10 hover:bg-white/20 disabled:opacity-20 text-white flex items-center justify-center text-[10px] transition-colors"
+                    title="Decrease 1 photo"
+                  >
+                    <Minus className="w-3 h-3" />
+                  </button>
+                  <input
+                    type="number"
+                    min={1}
+                    max={maxPossiblePhotos}
+                    value={settings.photoCount}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10);
+                      if (!isNaN(val)) {
+                        setSettings((prev) => ({
+                          ...prev,
+                          photoCount: Math.max(1, Math.min(val, maxPossiblePhotos)),
+                        }));
+                      }
+                    }}
+                    className="w-10 text-center bg-black/60 border border-emerald-500/40 rounded text-xs font-bold text-emerald-300 py-0.5 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSettings((prev) => ({
+                        ...prev,
+                        photoCount: Math.min(maxPossiblePhotos, prev.photoCount + 1),
+                      }))
+                    }
+                    disabled={settings.photoCount >= maxPossiblePhotos}
+                    className="w-5 h-5 rounded bg-white/10 hover:bg-white/20 disabled:opacity-20 text-white flex items-center justify-center text-[10px] transition-colors"
+                    title="Increase 1 photo"
+                  >
+                    <Plus className="w-3 h-3" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSettings((prev) => ({ ...prev, photoCount: maxPossiblePhotos }))
+                    }
+                    className="text-[10px] text-blue-400 hover:text-blue-300 font-semibold ml-0.5"
+                    title={`Fill maximum (${maxPossiblePhotos}) photos`}
+                  >
+                    Max
+                  </button>
+                </div>
               </div>
 
               <div className="flex items-center gap-2">
@@ -785,7 +1028,11 @@ export const PassportStudio: React.FC<PassportStudioProps> = () => {
           customWidthMm={settings.customWidthMm}
           customHeightMm={settings.customHeightMm}
           initialCropBox={cropBox}
-          onApplyCrop={(newBox) => setCropBox(newBox)}
+          initialCorners={quadCorners}
+          onApplyCrop={(newBox, newCorners) => {
+            setCropBox(newBox);
+            setQuadCorners(newCorners);
+          }}
         />
       )}
 
