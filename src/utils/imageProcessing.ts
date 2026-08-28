@@ -637,27 +637,47 @@ export async function renderIDCardSheetCanvas(
 }
 
 /**
- * Process document item with adaptive B&W photocopy / magic color / grayscale
+ * Process document item with adaptive B&W photocopy / magic color / grayscale & cropBox
  */
 export async function processDocumentItem(doc: DocumentItem): Promise<string> {
   const img = await loadImage(doc.dataUrl);
+
+  // Compute crop box source coordinates
+  let sx = 0;
+  let sy = 0;
+  let sWidth = img.width;
+  let sHeight = img.height;
+
+  if (doc.cropBox) {
+    sx = (doc.cropBox.x / 100) * img.width;
+    sy = (doc.cropBox.y / 100) * img.height;
+    sWidth = (doc.cropBox.width / 100) * img.width;
+    sHeight = (doc.cropBox.height / 100) * img.height;
+
+    // Safety clamping
+    sx = Math.max(0, Math.min(img.width - 1, sx));
+    sy = Math.max(0, Math.min(img.height - 1, sy));
+    sWidth = Math.max(1, Math.min(img.width - sx, sWidth));
+    sHeight = Math.max(1, Math.min(img.height - sy, sHeight));
+  }
+
   const canvas = document.createElement('canvas');
-  canvas.width = img.width;
-  canvas.height = img.height;
+  canvas.width = sWidth;
+  canvas.height = sHeight;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Canvas context failed');
 
   // Handle rotation
   if (doc.rotation && doc.rotation !== 0) {
     if (doc.rotation === 90 || doc.rotation === 270) {
-      canvas.width = img.height;
-      canvas.height = img.width;
+      canvas.width = sHeight;
+      canvas.height = sWidth;
     }
     ctx.translate(canvas.width / 2, canvas.height / 2);
     ctx.rotate((doc.rotation * Math.PI) / 180);
-    ctx.drawImage(img, -img.width / 2, -img.height / 2);
+    ctx.drawImage(img, sx, sy, sWidth, sHeight, -sWidth / 2, -sHeight / 2, sWidth, sHeight);
   } else {
-    ctx.drawImage(img, 0, 0);
+    ctx.drawImage(img, sx, sy, sWidth, sHeight, 0, 0, sWidth, sHeight);
   }
 
   // Filters

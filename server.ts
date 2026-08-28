@@ -24,11 +24,12 @@ function getAiClient(): GoogleGenAI | null {
 
 // Helper to execute generateContent with automatic retry and model fallback on 503/429 spikes
 async function generateContentWithRetry(ai: GoogleGenAI, params: any) {
-  // Try gemini-2.5-flash first as primary high-throughput model, followed by pro and flash variants
+  // Use approved Gemini models from the official SDK model list
   const modelsToTry = [
-    "gemini-2.5-flash",
-    "gemini-2.5-pro",
     "gemini-3.7-flash",
+    "gemini-2.5-flash",
+    "gemini-3.1-pro-preview",
+    "gemini-flash-latest",
   ];
   let lastError: any = null;
 
@@ -56,11 +57,12 @@ async function generateContentWithRetry(ai: GoogleGenAI, params: any) {
           errMsg.includes("try again later");
 
         if (isTemporary && attempt === 0) {
-          // Quick wait before retrying
-          await new Promise((resolve) => setTimeout(resolve, 800));
+          // Quick wait with jitter before retrying
+          const backoff = 400 + Math.random() * 400;
+          await new Promise((resolve) => setTimeout(resolve, backoff));
           continue;
         }
-        // Move to fallback model
+        // Move to next candidate model
         break;
       }
     }
@@ -279,11 +281,80 @@ Find the person's face and return ideal crop box percentage coordinates (0 to 10
 
       const parsed = JSON.parse(response.text || "{}");
       return res.json(parsed);
-    } catch (err: any) {
-      console.warn("AI Passport Crop note (using standard framing fallback):", err?.message || err);
+    } catch (_err: any) {
       return res.json({
         cropBox: { x: 10, y: 5, width: 80, height: 90 },
         recommendations: ["Positioned standard portrait framing"],
+        fallback: true,
+      });
+    }
+  });
+
+  // AI Document Border & Skew Detection Endpoint
+  app.post("/api/ai/detect-document-bounds", async (req, res) => {
+    try {
+      const { imageBase64, mimeType = "image/jpeg" } = req.body;
+      const ai = getAiClient();
+      if (!ai || !imageBase64) {
+        return res.json({
+          documentBoundingBox: { xMin: 30, yMin: 30, xMax: 970, yMax: 970 },
+          suggestedRotation: 0,
+          detectedType: "document",
+          cleanEdgesFound: true,
+          fallback: true,
+        });
+      }
+
+      const cleanBase64 = imageBase64.replace(/^data:image\/[a-z]+;base64,/, "");
+      const prompt = `Analyze this document scan / certificate / receipt image.
+Determine:
+1. The exact bounding box of the paper sheet / document content excluding background desk, shadows, fingers, or scanner bed (0-1000 normalized scale: xMin, yMin, xMax, yMax).
+2. The detected document type: "certificate", "invoice", "contract", "letter", "id_page", "receipt", or "document".
+3. Check if the document is rotated (suggestedRotation: 0, 90, 180, or 270 degrees clockwise to make text right-side up).
+4. Overall scan quality: "clear", "shadowed", "skewed", or "blurry".
+
+Return strict JSON matching the schema.`;
+
+      const response = await generateContentWithRetry(ai, {
+        model: "gemini-3.7-flash",
+        contents: [
+          { inlineData: { data: cleanBase64, mimeType } },
+          { text: prompt },
+        ],
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              documentBoundingBox: {
+                type: Type.OBJECT,
+                properties: {
+                  xMin: { type: Type.NUMBER },
+                  yMin: { type: Type.NUMBER },
+                  xMax: { type: Type.NUMBER },
+                  yMax: { type: Type.NUMBER },
+                },
+                required: ["xMin", "yMin", "xMax", "yMax"],
+              },
+              suggestedRotation: { type: Type.NUMBER },
+              detectedType: { type: Type.STRING },
+              quality: { type: Type.STRING },
+              cleanEdgesFound: { type: Type.BOOLEAN },
+            },
+            required: ["documentBoundingBox"],
+          },
+        },
+      });
+
+      const parsed = JSON.parse(response.text || "{}");
+      return res.json(parsed);
+    } catch (_err: any) {
+      return res.json({
+        documentBoundingBox: { xMin: 30, yMin: 30, xMax: 970, yMax: 970 },
+        suggestedRotation: 0,
+        detectedType: "document",
+        cleanEdgesFound: true,
+        fallback: true,
       });
     }
   });
@@ -310,7 +381,7 @@ Identify:
 4. Edge sharpness recommendation (soft, medium, hard).`;
 
       const response = await generateContentWithRetry(ai, {
-        model: "gemini-2.5-flash",
+        model: "gemini-3.7-flash",
         contents: [
           { inlineData: { data: cleanBase64, mimeType } },
           { text: prompt },
@@ -344,8 +415,7 @@ Identify:
         analysis: parsed,
         targetBgColor,
       });
-    } catch (err: any) {
-      console.warn("AI Remove Background note:", err?.message || err);
+    } catch (_err: any) {
       return res.json({
         status: "fallback",
         message: "Applied fast local smart segmentation",
