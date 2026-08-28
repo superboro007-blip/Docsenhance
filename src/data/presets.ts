@@ -10,7 +10,7 @@ export const PAPER_SIZES: PaperSizeConfig[] = [
     heightInches: 11.69,
     defaultPassportCount: 36, // Requested: 36 passport size photos instead of 30 photos
     maxPassportCount: 42,
-    description: 'Standard office & photo paper (210 × 297 mm). Holds up to 36 standard 35×45mm photos (6×6 grid).',
+    description: 'Standard office & photo paper (210 × 297 mm). Holds up to 36 standard 30×40mm photos (6×6 grid).',
   },
   {
     id: '4x6',
@@ -71,15 +71,26 @@ export const PAPER_SIZES: PaperSizeConfig[] = [
 
 export const PASSPORT_PRESETS: PassportPreset[] = [
   {
+    id: 'standard_30x40',
+    country: 'Standard / International / ID',
+    name: 'Standard Passport Photo (30 × 40 mm)',
+    widthMm: 30,
+    heightMm: 40,
+    headHeightMinPercent: 70,
+    headHeightMaxPercent: 80,
+    recommendedBackground: '#ffffff',
+    description: 'Standard 30 × 40 mm portrait size for passport, visa, ID card, and biometric applications.',
+  },
+  {
     id: 'standard_35x45',
-    country: 'International / UK / Europe / Schengen',
-    name: 'Standard Passport (35 × 45 mm)',
+    country: 'International / UK / Schengen',
+    name: 'European Passport (35 × 45 mm)',
     widthMm: 35,
     heightMm: 45,
     headHeightMinPercent: 70,
     headHeightMaxPercent: 80,
     recommendedBackground: '#ffffff',
-    description: 'ICAO standard compliant size used across Europe, UK, Canada, Australia, Asia.',
+    description: 'ICAO size used across Europe, UK, Canada, Australia, Asia.',
   },
   {
     id: 'us_2x2',
@@ -162,8 +173,8 @@ export const PASSPORT_PRESETS: PassportPreset[] = [
     id: 'custom_photo',
     country: 'Custom',
     name: 'Custom Dimensions...',
-    widthMm: 35,
-    heightMm: 45,
+    widthMm: 30,
+    heightMm: 40,
     headHeightMinPercent: 70,
     headHeightMaxPercent: 80,
     recommendedBackground: '#ffffff',

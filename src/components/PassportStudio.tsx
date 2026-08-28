@@ -50,8 +50,8 @@ export const PassportStudio: React.FC<PassportStudioProps> = () => {
 
   const [settings, setSettings] = useState<PassportSettings>({
     presetId: PASSPORT_PRESETS[0].id,
-    customWidthMm: 35,
-    customHeightMm: 45,
+    customWidthMm: 30,
+    customHeightMm: 40,
     photoCount: 36, // 36 photos requested on A4!
     gapMm: 2,
     marginTopMm: 6,
@@ -472,7 +472,7 @@ export const PassportStudio: React.FC<PassportStudioProps> = () => {
                         onChange={(e) =>
                           setSettings((prev) => ({
                             ...prev,
-                            customWidthMm: Number(e.target.value) || 35,
+                            customWidthMm: Number(e.target.value) || 30,
                           }))
                         }
                         className="w-full px-2.5 py-1.5 glass-input rounded-lg text-xs"
@@ -490,7 +490,7 @@ export const PassportStudio: React.FC<PassportStudioProps> = () => {
                         onChange={(e) =>
                           setSettings((prev) => ({
                             ...prev,
-                            customHeightMm: Number(e.target.value) || 45,
+                            customHeightMm: Number(e.target.value) || 40,
                           }))
                         }
                         className="w-full px-2.5 py-1.5 glass-input rounded-lg text-xs"

@@ -403,7 +403,7 @@ export async function renderPassportSheetCanvas(
   let cols = Math.floor((availableWidthMm + settings.gapMm) / (photoWidthMm + settings.gapMm));
   let rows = Math.floor((availableHeightMm + settings.gapMm) / (photoHeightMm + settings.gapMm));
 
-  // If paper is A4 and photo is 35x45 mm, default to requested 36 photos (6 columns x 6 rows)
+  // If paper is A4 and count is 36, use a balanced 6 columns x 6 rows grid
   if (paper.id === 'a4' && settings.photoCount >= 36) {
     cols = 6;
     rows = 6;
