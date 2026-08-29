@@ -97,6 +97,7 @@ export const DocumentStudio: React.FC = () => {
   const [isBgRemovalOpen, setIsBgRemovalOpen] = useState(false);
   const [processedDocUrl, setProcessedDocUrl] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
 
   const [settings, setSettings] = useState<DocumentSettings>({
     paperSizeId: 'a4',
@@ -109,6 +110,54 @@ export const DocumentStudio: React.FC = () => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const currentDoc = documents[selectedDocIndex] || documents[0];
+
+  // Helper to load multiple files
+  const processFiles = (files: FileList | File[]) => {
+    if (!files || files.length === 0) return;
+
+    Array.from(files).forEach((file: File, idx) => {
+      if (!file.type.startsWith('image/')) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const dataUrl = ev.target?.result as string;
+        const newDoc: DocumentItem = {
+          id: `doc-${Date.now()}-${idx}`,
+          title: file.name.replace(/\.[^/.]+$/, ''),
+          dataUrl,
+          filterMode: 'magic_color',
+          rotation: 0,
+          brightness: 0,
+          contrast: 0,
+          scalePercent: 100,
+        };
+        setDocuments((prev) => [...prev, newDoc]);
+        setSelectedDocIndex((prev) => prev); // keep selection or select latest
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  // Drag & Drop handlers
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      processFiles(e.dataTransfer.files);
+    }
+  };
 
   // Global Clipboard Paste (Ctrl+V / Cmd+V)
   useEffect(() => {
@@ -294,7 +343,27 @@ export const DocumentStudio: React.FC = () => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+    <div
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      className={`max-w-7xl mx-auto px-4 py-6 space-y-6 transition-all ${
+        isDraggingOver ? 'ring-2 ring-purple-500 rounded-3xl bg-purple-500/5' : ''
+      }`}
+    >
+      {/* Drag & Drop Full-screen Indicator overlay when dragging */}
+      {isDraggingOver && (
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex flex-col items-center justify-center p-6 border-4 border-dashed border-purple-500 animate-fade-in pointer-events-none">
+          <div className="w-20 h-20 rounded-3xl bg-purple-600/30 text-purple-300 border border-purple-500/50 flex items-center justify-center mb-4 shadow-2xl animate-bounce">
+            <Upload className="w-10 h-10" />
+          </div>
+          <h2 className="text-2xl font-bold text-white mb-2">Drop Document Scans Here</h2>
+          <p className="text-sm text-purple-300 max-w-md text-center">
+            Release your files to automatically add them to your multi-page scan queue for 4-corner perspective warping and 300 DPI print layout.
+          </p>
+        </div>
+      )}
+
       {/* Title */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 glass-card p-5 rounded-2xl border border-white/10 shadow-lg">
         <div>
@@ -307,11 +376,11 @@ export const DocumentStudio: React.FC = () => {
             </h1>
           </div>
           <p className="text-sm text-slate-400 mt-1">
-            Precision edge crop, clean scanner shadows, enhance high-contrast text, and arrange documents for 300 DPI print.
+            Precision 4-corner freecrop, clean scanner shadows, enhance high-contrast text, and arrange documents for 300 DPI print.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <input
             type="file"
             ref={fileInputRef}
@@ -334,6 +403,24 @@ export const DocumentStudio: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Left Controls (5 Cols) */}
         <div className="lg:col-span-5 space-y-5">
+          {/* Dedicated Drag & Drop Dropzone */}
+          <div
+            onClick={() => fileInputRef.current?.click()}
+            className="border-2 border-dashed border-purple-500/30 hover:border-purple-400/60 bg-purple-500/5 hover:bg-purple-500/10 rounded-2xl p-4 text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-2 group"
+          >
+            <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 group-hover:scale-110 transition-transform">
+              <Upload className="w-5 h-5" />
+            </div>
+            <div>
+              <span className="text-xs font-bold text-purple-300 block">
+                Drag & Drop Document Images Here
+              </span>
+              <span className="text-[11px] text-purple-400/80 block mt-0.5">
+                Supports single or multiple files, phone camera scans, and certificates (or click to browse)
+              </span>
+            </div>
+          </div>
+
           {/* Document Queue List */}
           <div className="glass-card rounded-2xl p-5 border border-white/10 shadow-lg space-y-3">
             <div className="flex items-center justify-between">
@@ -598,10 +685,12 @@ export const DocumentStudio: React.FC = () => {
           onClose={() => setIsCropModalOpen(false)}
           imageSrc={currentDoc.dataUrl}
           initialCropBox={currentDoc.cropBox}
+          initialCorners={currentDoc.quadCorners}
           initialRotation={currentDoc.rotation}
-          onApplyCrop={(cropBox, rot) => {
+          onApplyCrop={(cropBox, quadCorners, rot) => {
             updateCurrentDoc({
               cropBox,
+              quadCorners,
               rotation: rot !== undefined ? rot : currentDoc.rotation,
             });
           }}

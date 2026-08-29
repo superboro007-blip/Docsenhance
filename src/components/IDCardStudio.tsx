@@ -119,6 +119,10 @@ export const IDCardStudio: React.FC = () => {
   const [isRendering, setIsRendering] = useState(false);
   const [sheetPreviewUrl, setSheetPreviewUrl] = useState<string | null>(null);
   const [activeSettingsTab, setActiveSettingsTab] = useState<'layout' | 'dimensions' | 'styling'>('layout');
+  const [isDraggingGlobal, setIsDraggingGlobal] = useState(false);
+  const [isDraggingAuto, setIsDraggingAuto] = useState(false);
+  const [isDraggingFront, setIsDraggingFront] = useState(false);
+  const [isDraggingBack, setIsDraggingBack] = useState(false);
 
   const fileInputFrontRef = useRef<HTMLInputElement>(null);
   const fileInputBackRef = useRef<HTMLInputElement>(null);
@@ -177,9 +181,60 @@ export const IDCardStudio: React.FC = () => {
     return () => window.removeEventListener('paste', handlePaste);
   }, [frontCard]);
 
-  // Handle auto upload with AI detection & Ambiguity handling
-  const handleAutoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
+  const readFileAsDataUrl = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => resolve(ev.target?.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  // Helper to load single file directly into front or back
+  const handleFrontFile = async (file: File) => {
+    if (!file.type.startsWith('image/')) return;
+    const dataUrl = await readFileAsDataUrl(file);
+    setFrontCard({
+      id: `front-${Date.now()}`,
+      side: 'front',
+      dataUrl,
+      fileName: file.name,
+      rotation: 0,
+      brightness: 0,
+      contrast: 0,
+      saturation: 0,
+      sharpness: 0,
+      detectedSide: 'front',
+      detectedConfidence: 1.0,
+      detectedSummary: 'Front Side (Direct Upload)',
+      isAmbiguous: false,
+    });
+    if (fileInputFrontRef.current) fileInputFrontRef.current.value = '';
+  };
+
+  const handleBackFile = async (file: File) => {
+    if (!file.type.startsWith('image/')) return;
+    const dataUrl = await readFileAsDataUrl(file);
+    setBackCard({
+      id: `back-${Date.now()}`,
+      side: 'back',
+      dataUrl,
+      fileName: file.name,
+      rotation: 0,
+      brightness: 0,
+      contrast: 0,
+      saturation: 0,
+      sharpness: 0,
+      detectedSide: 'back',
+      detectedConfidence: 1.0,
+      detectedSummary: 'Back Side (Direct Upload)',
+      isAmbiguous: false,
+    });
+    if (fileInputBackRef.current) fileInputBackRef.current.value = '';
+  };
+
+  // Process multiple or single files with AI detection
+  const processAutoUploadFiles = async (files: FileList | File[]) => {
     if (!files || files.length === 0) return;
 
     setIsAiDetecting(true);
@@ -188,6 +243,7 @@ export const IDCardStudio: React.FC = () => {
     try {
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
+        if (!file.type.startsWith('image/')) continue;
         const dataUrl = await readFileAsDataUrl(file);
 
         // Call backend AI side detector with safe fallback
@@ -277,6 +333,49 @@ export const IDCardStudio: React.FC = () => {
     }
   };
 
+  // Handle auto upload with AI detection & Ambiguity handling
+  const handleAutoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    processAutoUploadFiles(files);
+  };
+
+  // Dedicated Front Side Upload
+  const handleFrontUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    handleFrontFile(file);
+  };
+
+  // Dedicated Back Side Upload
+  const handleBackUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    handleBackFile(file);
+  };
+
+  // Global Drag & Drop handlers
+  const handleGlobalDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingGlobal(true);
+  };
+
+  const handleGlobalDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingGlobal(false);
+  };
+
+  const handleGlobalDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingGlobal(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      processAutoUploadFiles(e.dataTransfer.files);
+    }
+  };
+
   // Manual resolution of ambiguous card
   const handleResolvePendingSide = (chosenSide: 'front' | 'back') => {
     if (!pendingDecision) return;
@@ -322,61 +421,6 @@ export const IDCardStudio: React.FC = () => {
       rotation: 0,
     });
     setAiDetectNotification('Ambiguity Detected: Please select Front or Back');
-  };
-
-  const readFileAsDataUrl = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (ev) => resolve(ev.target?.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  };
-
-  // Dedicated Front Side Upload
-  const handleFrontUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const dataUrl = await readFileAsDataUrl(file);
-    setFrontCard({
-      id: `front-${Date.now()}`,
-      side: 'front',
-      dataUrl,
-      fileName: file.name,
-      rotation: 0,
-      brightness: 0,
-      contrast: 0,
-      saturation: 0,
-      sharpness: 0,
-      detectedSide: 'front',
-      detectedConfidence: 1.0,
-      detectedSummary: 'Front Side (Manual Upload)',
-      isAmbiguous: false,
-    });
-    if (fileInputFrontRef.current) fileInputFrontRef.current.value = '';
-  };
-
-  // Dedicated Back Side Upload
-  const handleBackUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const dataUrl = await readFileAsDataUrl(file);
-    setBackCard({
-      id: `back-${Date.now()}`,
-      side: 'back',
-      dataUrl,
-      fileName: file.name,
-      rotation: 0,
-      brightness: 0,
-      contrast: 0,
-      saturation: 0,
-      sharpness: 0,
-      detectedSide: 'back',
-      detectedConfidence: 1.0,
-      detectedSummary: 'Back Side (Manual Upload)',
-      isAmbiguous: false,
-    });
-    if (fileInputBackRef.current) fileInputBackRef.current.value = '';
   };
 
   // Swap Front and Back Cards
@@ -525,7 +569,27 @@ export const IDCardStudio: React.FC = () => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+    <div
+      onDragOver={handleGlobalDragOver}
+      onDragLeave={handleGlobalDragLeave}
+      onDrop={handleGlobalDrop}
+      className={`max-w-7xl mx-auto px-4 py-6 space-y-6 transition-all ${
+        isDraggingGlobal ? 'ring-2 ring-emerald-500 rounded-3xl bg-emerald-500/5' : ''
+      }`}
+    >
+      {/* Drag & Drop Full-screen Indicator overlay when dragging */}
+      {isDraggingGlobal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex flex-col items-center justify-center p-6 border-4 border-dashed border-emerald-500 animate-fade-in pointer-events-none">
+          <div className="w-20 h-20 rounded-3xl bg-emerald-600/30 text-emerald-300 border border-emerald-500/50 flex items-center justify-center mb-4 shadow-2xl animate-bounce">
+            <Upload className="w-10 h-10" />
+          </div>
+          <h2 className="text-2xl font-bold text-white mb-2">Drop ID Card Photos Here</h2>
+          <p className="text-sm text-emerald-300 max-w-md text-center">
+            Release your images to automatically analyze card orientation, detect Front vs Back side, and auto-slot them.
+          </p>
+        </div>
+      )}
+
       {/* Title & Intro */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 glass-card p-5 rounded-2xl border border-white/10 shadow-lg">
         <div>
@@ -538,7 +602,7 @@ export const IDCardStudio: React.FC = () => {
             </h1>
           </div>
           <p className="text-sm text-slate-400 mt-1">
-            Auto front & back side AI detection, CR-80 sizing, foldable laminating layouts, and multi-card A4 printing.
+            Auto front & back side AI detection, 4-corner perspective warping, CR-80 sizing, foldable laminating layouts, and multi-card A4 printing.
           </p>
         </div>
 
@@ -627,7 +691,29 @@ export const IDCardStudio: React.FC = () => {
             />
             <div
               onClick={() => fileInputAutoRef.current?.click()}
-              className="border-2 border-dashed border-emerald-500/30 hover:border-emerald-400/60 bg-emerald-500/5 hover:bg-emerald-500/10 rounded-2xl p-4 text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-2 group"
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setIsDraggingAuto(true);
+              }}
+              onDragLeave={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setIsDraggingAuto(false);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setIsDraggingAuto(false);
+                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                  processAutoUploadFiles(e.dataTransfer.files);
+                }
+              }}
+              className={`border-2 border-dashed rounded-2xl p-4 text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-2 group ${
+                isDraggingAuto
+                  ? 'border-emerald-400 bg-emerald-500/20 scale-[1.01]'
+                  : 'border-emerald-500/30 hover:border-emerald-400/60 bg-emerald-500/5 hover:bg-emerald-500/10'
+              }`}
             >
               <div className="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400 group-hover:scale-110 transition-transform">
                 <Sparkles className="w-5 h-5" />
@@ -722,7 +808,30 @@ export const IDCardStudio: React.FC = () => {
             {/* Side-by-Side Cards Slots with Manual Selectors */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
               {/* Front Card Slot */}
-              <div className="bg-black/30 p-3 rounded-xl border border-white/10 flex flex-col justify-between space-y-2">
+              <div
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsDraggingFront(true);
+                }}
+                onDragLeave={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsDraggingFront(false);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsDraggingFront(false);
+                  const file = e.dataTransfer.files?.[0];
+                  if (file) handleFrontFile(file);
+                }}
+                className={`p-3 rounded-xl border flex flex-col justify-between space-y-2 transition-all ${
+                  isDraggingFront
+                    ? 'bg-blue-500/20 border-blue-400 ring-2 ring-blue-500/50 scale-[1.02]'
+                    : 'bg-black/30 border-white/10'
+                }`}
+              >
                 <div className="flex items-center justify-between">
                   <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30 flex items-center gap-1">
                     <CreditCard className="w-3 h-3 text-blue-400" />
@@ -765,7 +874,7 @@ export const IDCardStudio: React.FC = () => {
                   ) : (
                     <div className="text-center p-2">
                       <span className="text-[11px] text-slate-500 block">No Front Image</span>
-                      <span className="text-[9px] text-slate-600 block mt-0.5">Upload or auto-assign</span>
+                      <span className="text-[9px] text-slate-600 block mt-0.5">Drop front image here</span>
                     </div>
                   )}
                   {frontCard?.detectedSide && (
@@ -818,7 +927,30 @@ export const IDCardStudio: React.FC = () => {
               </div>
 
               {/* Back Card Slot */}
-              <div className="bg-black/30 p-3 rounded-xl border border-white/10 flex flex-col justify-between space-y-2">
+              <div
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsDraggingBack(true);
+                }}
+                onDragLeave={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsDraggingBack(false);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsDraggingBack(false);
+                  const file = e.dataTransfer.files?.[0];
+                  if (file) handleBackFile(file);
+                }}
+                className={`p-3 rounded-xl border flex flex-col justify-between space-y-2 transition-all ${
+                  isDraggingBack
+                    ? 'bg-amber-500/20 border-amber-400 ring-2 ring-amber-500/50 scale-[1.02]'
+                    : 'bg-black/30 border-white/10'
+                }`}
+              >
                 <div className="flex items-center justify-between">
                   <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
                     <Layers className="w-3 h-3 text-amber-400" />
@@ -861,7 +993,7 @@ export const IDCardStudio: React.FC = () => {
                   ) : (
                     <div className="text-center p-2">
                       <span className="text-[11px] text-slate-500 block">No Back Image</span>
-                      <span className="text-[9px] text-slate-600 block mt-0.5">Upload or auto-assign</span>
+                      <span className="text-[9px] text-slate-600 block mt-0.5">Drop back image here</span>
                     </div>
                   )}
                   {backCard?.detectedSide && (
