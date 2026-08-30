@@ -80,9 +80,6 @@ export const IDCardCropModal: React.FC<IDCardCropModalProps> = ({
     height: 0,
   });
 
-  const [isAiDetecting, setIsAiDetecting] = useState(false);
-  const [aiNote, setAiNote] = useState<string | null>(null);
-
   useEffect(() => {
     if (!isOpen) return;
 
@@ -112,42 +109,6 @@ export const IDCardCropModal: React.FC<IDCardCropModalProps> = ({
   }, [isOpen, initialCropBox, initialCorners, presetAspectRatio]);
 
   const currentRatio = isFreeform ? null : presetAspectRatio;
-
-  const handleAiDetectCardBounds = async () => {
-    setIsAiDetecting(true);
-    setAiNote('Detecting ID card edges...');
-    try {
-      const res = await fetch('/api/ai/detect-card-side', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64: imageSrc }),
-      });
-      if (!res.ok) throw new Error('AI detect service not reachable');
-      const data = await res.json();
-      if (data.cardBoundingBox) {
-        const x = (data.cardBoundingBox.xMin / 1000) * 100;
-        const y = (data.cardBoundingBox.yMin / 1000) * 100;
-        const w = ((data.cardBoundingBox.xMax - data.cardBoundingBox.xMin) / 1000) * 100;
-        const h = currentRatio ? w / currentRatio : ((data.cardBoundingBox.yMax - data.cardBoundingBox.yMin) / 1000) * 100;
-
-        setCropBox({
-          x: Math.max(0, Math.min(100 - w, x)),
-          y: Math.max(0, Math.min(100 - h, y)),
-          width: Math.min(100, w),
-          height: Math.min(100, h),
-        });
-        setAiNote(`Card detected (${data.summary || 'aligned'})`);
-      } else {
-        setAiNote('Standard ID card crop fitted');
-      }
-    } catch (err) {
-      console.warn('AI card detect failed:', err);
-      setAiNote('Center frame applied');
-    } finally {
-      setIsAiDetecting(false);
-      setTimeout(() => setAiNote(null), 3000);
-    }
-  };
 
   const nudge = (dx: number, dy: number) => {
     setCropBox((prev) => ({
@@ -415,8 +376,6 @@ export const IDCardCropModal: React.FC<IDCardCropModalProps> = ({
                   bl: { x: 6, y: 94 },
                 });
               }}
-              onAutoDetectCorners={handleAiDetectCardBounds}
-              isAiLoading={isAiDetecting}
             />
           </div>
         ) : (
@@ -425,7 +384,7 @@ export const IDCardCropModal: React.FC<IDCardCropModalProps> = ({
         <div className="px-5 py-2.5 bg-slate-950/60 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-slate-400 font-semibold flex items-center gap-1">
-              <Sliders className="w-3.5 h-3.5 text-emerald-400" /> Mode:
+              <Sliders className="w-3.5 h-3.5 text-emerald-400" /> Ratio Lock:
             </span>
             <button
               onClick={() => setIsFreeform(false)}
@@ -449,22 +408,20 @@ export const IDCardCropModal: React.FC<IDCardCropModalProps> = ({
               <Unlock className="w-3 h-3" />
               Freeform Manual Crop
             </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={centerBox}
+              className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center gap-1 font-medium"
+            >
+              Center Frame
+            </button>
             <button
               onClick={maximizeCrop}
               className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center gap-1 font-medium"
             >
               <Maximize2 className="w-3 h-3" /> Maximize
-            </button>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleAiDetectCardBounds}
-              disabled={isAiDetecting}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 border border-emerald-500/40 font-semibold transition-all shadow-sm disabled:opacity-50"
-            >
-              <Sparkles className={`w-3.5 h-3.5 ${isAiDetecting ? 'animate-spin' : ''}`} />
-              {isAiDetecting ? 'Detecting Edges...' : 'AI Auto-Detect Card'}
             </button>
           </div>
         </div>

@@ -226,6 +226,7 @@ export const DocumentStudio: React.FC = () => {
   }, [
     currentDoc?.dataUrl,
     currentDoc?.cropBox,
+    currentDoc?.quadCorners,
     currentDoc?.rotation,
     currentDoc?.filterMode,
     currentDoc?.brightness,

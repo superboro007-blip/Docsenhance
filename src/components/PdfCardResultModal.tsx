@@ -16,30 +16,46 @@ import { ExtractedCard, RenderedPdfPage } from '../utils/pdfProcessor';
 interface PdfCardResultModalProps {
   isOpen: boolean;
   onClose: () => void;
-  documentType: string;
-  documentTitle: string;
+  result?: {
+    documentType?: string;
+    documentTitle?: string;
+    frontCard?: ExtractedCard;
+    backCard?: ExtractedCard;
+    allCards?: ExtractedCard[];
+    renderedPages?: RenderedPdfPage[];
+  } | null;
+  documentType?: string;
+  documentTitle?: string;
   frontCard?: ExtractedCard;
   backCard?: ExtractedCard;
-  allCards: ExtractedCard[];
-  renderedPages: RenderedPdfPage[];
+  allCards?: ExtractedCard[];
+  renderedPages?: RenderedPdfPage[];
   onApply: (front?: ExtractedCard, back?: ExtractedCard) => void;
 }
 
 export const PdfCardResultModal: React.FC<PdfCardResultModalProps> = ({
   isOpen,
   onClose,
-  documentType,
-  documentTitle,
-  frontCard,
-  backCard,
-  allCards,
-  renderedPages,
+  result,
+  documentType: propDocType,
+  documentTitle: propDocTitle,
+  frontCard: propFrontCard,
+  backCard: propBackCard,
+  allCards: propAllCards,
+  renderedPages: propRenderedPages,
   onApply,
 }) => {
   if (!isOpen) return null;
 
-  const getDocBadgeColor = (type: string) => {
-    switch (type.toLowerCase()) {
+  const docType = result?.documentType || propDocType || 'id_card';
+  const docTitle = result?.documentTitle || propDocTitle || 'Identity Document';
+  const front = result?.frontCard || propFrontCard;
+  const back = result?.backCard || propBackCard;
+  const cards = result?.allCards || propAllCards || (front ? [front, ...(back ? [back] : [])] : []);
+  const pages = result?.renderedPages || propRenderedPages || [];
+
+  const getDocBadgeColor = (type?: string) => {
+    switch ((type || '').toLowerCase()) {
       case 'aadhaar':
         return 'bg-orange-500/20 text-orange-300 border-orange-500/30';
       case 'pan':
@@ -60,23 +76,23 @@ export const PdfCardResultModal: React.FC<PdfCardResultModalProps> = ({
         <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/90">
           <div className="flex items-center gap-3">
             <div className="p-2.5 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-md shadow-emerald-500/20">
-              <Sparkles className="w-5 h-5" />
+              <FileText className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-base font-bold text-white">
-                  PDF Identity Document Detected & Isolated
+                  PDF Document Loaded Successfully
                 </h3>
                 <span
                   className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase ${getDocBadgeColor(
-                    documentType
+                    docType
                   )}`}
                 >
-                  {documentTitle || documentType}
+                  {docTitle || docType}
                 </span>
               </div>
               <p className="text-xs text-slate-400">
-                Front and Back ID card portions were automatically located, cropped, and rectified.
+                Rendered in ultra high-definition (300 DPI) ready for manual cropping & printing.
               </p>
             </div>
           </div>
@@ -99,7 +115,7 @@ export const PdfCardResultModal: React.FC<PdfCardResultModalProps> = ({
               </div>
               <div>
                 <h4 className="text-xs font-bold text-emerald-300">
-                  {allCards.length} Card Region{allCards.length > 1 ? 's' : ''} Successfully Isolated
+                  {cards.length} Card Region{cards.length > 1 ? 's' : ''} Successfully Isolated
                 </h4>
                 <p className="text-[11px] text-slate-300 mt-0.5">
                   Ready to auto-slot into ID Card Studio with standard CR-80 sizing and cutting/folding lines.
@@ -124,17 +140,17 @@ export const PdfCardResultModal: React.FC<PdfCardResultModalProps> = ({
                   <CreditCard className="w-4 h-4 text-emerald-400" />
                   Front Side Card
                 </span>
-                {frontCard && (
+                {front && (
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-mono font-semibold border border-emerald-500/30">
-                    {Math.round(frontCard.confidence * 100)}% Match
+                    {Math.round(front.confidence * 100)}% Match
                   </span>
                 )}
               </div>
 
               <div className="flex-1 min-h-[160px] bg-slate-900 rounded-xl border border-slate-800/80 flex items-center justify-center p-2 relative overflow-hidden">
-                {frontCard ? (
+                {front ? (
                   <img
-                    src={frontCard.dataUrl}
+                    src={front.dataUrl}
                     alt="Front Card"
                     className="max-w-full max-h-48 object-contain rounded-lg shadow-md"
                   />
@@ -145,17 +161,17 @@ export const PdfCardResultModal: React.FC<PdfCardResultModalProps> = ({
                 )}
               </div>
 
-              {frontCard && (
+              {front && (
                 <div className="text-[11px] text-slate-400 space-y-1">
-                  <p className="font-medium text-slate-300">{frontCard.summary}</p>
-                  {frontCard.detectedElements?.holder_name && (
+                  <p className="font-medium text-slate-300">{front.summary}</p>
+                  {front.detectedElements?.holder_name && (
                     <p className="text-[10px] text-slate-400">
-                      Name: <strong className="text-white">{frontCard.detectedElements.holder_name}</strong>
+                      Name: <strong className="text-white">{front.detectedElements.holder_name}</strong>
                     </p>
                   )}
-                  {frontCard.detectedElements?.id_number_masked && (
+                  {front.detectedElements?.id_number_masked && (
                     <p className="text-[10px] text-slate-400">
-                      ID Number: <strong className="text-white font-mono">{frontCard.detectedElements.id_number_masked}</strong>
+                      ID Number: <strong className="text-white font-mono">{front.detectedElements.id_number_masked}</strong>
                     </p>
                   )}
                 </div>
@@ -169,17 +185,17 @@ export const PdfCardResultModal: React.FC<PdfCardResultModalProps> = ({
                   <CreditCard className="w-4 h-4 text-teal-400" />
                   Back Side Card
                 </span>
-                {backCard && (
+                {back && (
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-teal-500/20 text-teal-300 font-mono font-semibold border border-teal-500/30">
-                    {Math.round(backCard.confidence * 100)}% Match
+                    {Math.round(back.confidence * 100)}% Match
                   </span>
                 )}
               </div>
 
               <div className="flex-1 min-h-[160px] bg-slate-900 rounded-xl border border-slate-800/80 flex items-center justify-center p-2 relative overflow-hidden">
-                {backCard ? (
+                {back ? (
                   <img
-                    src={backCard.dataUrl}
+                    src={back.dataUrl}
                     alt="Back Card"
                     className="max-w-full max-h-48 object-contain rounded-lg shadow-md"
                   />
@@ -190,9 +206,9 @@ export const PdfCardResultModal: React.FC<PdfCardResultModalProps> = ({
                 )}
               </div>
 
-              {backCard && (
+              {back && (
                 <div className="text-[11px] text-slate-400 space-y-1">
-                  <p className="font-medium text-slate-300">{backCard.summary}</p>
+                  <p className="font-medium text-slate-300">{back.summary}</p>
                 </div>
               )}
             </div>
@@ -202,7 +218,7 @@ export const PdfCardResultModal: React.FC<PdfCardResultModalProps> = ({
         {/* Footer Actions */}
         <div className="px-6 py-4 bg-slate-950 border-t border-slate-800 flex items-center justify-between flex-wrap gap-3">
           <div className="text-xs text-slate-400">
-            Detected Document: <strong className="text-white">{documentTitle || documentType}</strong>
+            Detected Document: <strong className="text-white">{docTitle || docType}</strong>
           </div>
 
           <div className="flex items-center gap-3">
@@ -214,7 +230,7 @@ export const PdfCardResultModal: React.FC<PdfCardResultModalProps> = ({
             </button>
             <button
               onClick={() => {
-                onApply(frontCard, backCard);
+                onApply(front, back);
                 onClose();
               }}
               className="inline-flex items-center gap-2 px-6 py-2.5 text-xs font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 rounded-xl shadow-lg shadow-emerald-600/30 transition-all"

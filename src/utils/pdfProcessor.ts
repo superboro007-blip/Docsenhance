@@ -1,12 +1,18 @@
 import * as pdfjsLib from 'pdfjs-dist';
+// @ts-ignore - Vite asset import for pdf.worker
+import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import { DetectedIdCard, PdfIdDetectionResult } from '../types';
 import { loadImage } from './imageProcessing';
 
-// Set up pdf.js worker using matching CDN to ensure universal browser support in Vite/iFrames
+// Set up pdf.js worker using bundled worker url with unpkg fallback
 if (typeof window !== 'undefined') {
   try {
-    const version = pdfjsLib.version || '4.10.38';
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${version}/pdf.worker.min.mjs`;
+    if (pdfjsWorker) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+    } else {
+      const version = pdfjsLib.version || '6.3.289';
+      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${version}/build/pdf.worker.min.mjs`;
+    }
   } catch (err) {
     console.warn('pdf.js worker setup note:', err);
   }
@@ -68,18 +74,24 @@ export async function renderPdfPages(
     data = await readFileAsArrayBuffer(fileOrBuffer);
   }
 
-  const loadingTask = pdfjsLib.getDocument({
-    data: new Uint8Array(data),
-    password: password || undefined,
-  });
-
   let pdfDoc: pdfjsLib.PDFDocumentProxy;
   try {
+    const cMapUrl = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version || '6.3.289'}/cmaps/`;
+    const standardFontDataUrl = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version || '6.3.289'}/standard_fonts/`;
+
+    const loadingTask = pdfjsLib.getDocument({
+      data: new Uint8Array(data),
+      password: password || undefined,
+      cMapUrl,
+      cMapPacked: true,
+      standardFontDataUrl,
+    });
     pdfDoc = await loadingTask.promise;
   } catch (err: any) {
     if (
       err?.name === 'PasswordException' ||
       err?.message?.includes('Password') ||
+      err?.message?.includes('password') ||
       err?.code === 1
     ) {
       throw new PdfPasswordRequiredError('This PDF document (e.g. e-Aadhaar) is password protected.');
@@ -182,7 +194,7 @@ export async function cropCardFromImage(
 }
 
 /**
- * Auto-detect and isolate Front and Back ID cards from an uploaded PDF or Multi-Card image
+ * Render and load pages from an uploaded PDF document for manual ID card cropping
  */
 export async function detectAndExtractCardsFromPdf(
   fileOrPages: File | RenderedPdfPage[],
@@ -206,8 +218,8 @@ export async function detectAndExtractCardsFromPdf(
   if (Array.isArray(fileOrPages)) {
     pages = fileOrPages;
   } else {
-    onProgress?.('Rendering PDF pages into ultra-high-definition canvas...');
-    pages = await renderPdfPages(fileOrPages, { scale: 2.5, maxPages: 3, password });
+    onProgress?.('Rendering PDF pages in high-resolution (300 DPI)...');
+    pages = await renderPdfPages(fileOrPages, { scale: 2.5, maxPages: 4, password });
   }
 
   if (pages.length === 0) {
@@ -215,93 +227,68 @@ export async function detectAndExtractCardsFromPdf(
   }
 
   const allCards: ExtractedCard[] = [];
-  let detectedDocType = 'id_card';
-  let detectedDocTitle = 'Identity Document';
+  const detectedDocType = 'id_document';
+  const detectedDocTitle = 'PDF Document';
 
-  for (let i = 0; i < pages.length; i++) {
-    const page = pages[i];
-    onProgress?.(`AI scanning Page ${page.pageNumber} for ID cards (Aadhaar, PAN, Voter ID, License)...`);
+  // Extract Page 1 as Front Card candidate
+  const page1 = pages[0];
+  const frontCard: ExtractedCard = {
+    id: `extracted-page-1-${Date.now()}`,
+    side: 'front',
+    dataUrl: page1.dataUrl,
+    confidence: 1.0,
+    summary: 'PDF Page 1',
+    documentType: detectedDocType,
+    documentTitle: detectedDocTitle,
+    pageNumber: 1,
+    boundingBox: { ymin: 0, xmin: 0, ymax: 1000, xmax: 1000 },
+    qualityIssues: { is_blurry: false, has_glare: false, is_partially_cut: false },
+  };
+  allCards.push(frontCard);
 
-    try {
-      const response = await fetch('/api/ai/detect-pdf-id-cards', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          imageBase64: page.dataUrl,
-          pageNumber: page.pageNumber,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Detection API error: HTTP ${response.status}`);
-      }
-
-      const result: PdfIdDetectionResult = await response.json();
-
-      if (result.document_type && result.document_type !== 'unknown') {
-        detectedDocType = result.document_type;
-      }
-      if (result.document_title) {
-        detectedDocTitle = result.document_title;
-      }
-
-      if (result.id_detected && result.cards_found && result.cards_found.length > 0) {
-        for (const card of result.cards_found) {
-          const croppedDataUrl = await cropCardFromImage(
-            page.dataUrl,
-            card.bounding_box_1000,
-            card.rotation_needed_degrees
-          );
-
-          const side: 'front' | 'back' = card.side.toUpperCase() === 'BACK' ? 'back' : 'front';
-
-          allCards.push({
-            id: `extracted-${Date.now()}-${allCards.length}`,
-            side,
-            dataUrl: croppedDataUrl,
-            confidence: card.confidence_score,
-            summary: card.summary,
-            documentType: result.document_type || 'id_card',
-            documentTitle: result.document_title,
-            pageNumber: page.pageNumber,
-            boundingBox: card.bounding_box_1000,
-            detectedElements: card.detected_elements,
-            qualityIssues: card.quality_issues,
-          });
-        }
-      }
-    } catch (err) {
-      console.warn(`Error detecting cards on page ${page.pageNumber}:`, err);
-    }
-  }
-
-  // Assign Front and Back cards intelligently
-  let frontCard = allCards.find((c) => c.side === 'front');
-  let backCard = allCards.find((c) => c.side === 'back');
-
-  // If we have 2 cards and both are marked same side or ambiguous, assign first as front, second as back
-  if (allCards.length >= 2) {
-    if (!frontCard && !backCard) {
-      frontCard = { ...allCards[0], side: 'front' };
-      backCard = { ...allCards[1], side: 'back' };
-    } else if (frontCard && !backCard) {
-      const other = allCards.find((c) => c.id !== frontCard?.id);
-      if (other) backCard = { ...other, side: 'back' };
-    } else if (!frontCard && backCard) {
-      const other = allCards.find((c) => c.id !== backCard?.id);
-      if (other) frontCard = { ...other, side: 'front' };
-    }
-  } else if (allCards.length === 1 && !frontCard && !backCard) {
-    frontCard = { ...allCards[0], side: 'front' };
+  // If multi-page PDF, extract Page 2 as Back Card candidate; otherwise reuse Page 1 for back cropping
+  let backCard: ExtractedCard | undefined;
+  if (pages.length > 1) {
+    const page2 = pages[1];
+    backCard = {
+      id: `extracted-page-2-${Date.now()}`,
+      side: 'back',
+      dataUrl: page2.dataUrl,
+      confidence: 1.0,
+      summary: 'PDF Page 2',
+      documentType: detectedDocType,
+      documentTitle: detectedDocTitle,
+      pageNumber: 2,
+      boundingBox: { ymin: 0, xmin: 0, ymax: 1000, xmax: 1000 },
+      qualityIssues: { is_blurry: false, has_glare: false, is_partially_cut: false },
+    };
+    allCards.push(backCard);
+  } else {
+    // For single page documents (e.g. e-Aadhaar sheet containing both front & back on page 1),
+    // provide the same rendered sheet to both slots so the user can easily crop both
+    backCard = {
+      id: `extracted-page-1-back-${Date.now()}`,
+      side: 'back',
+      dataUrl: page1.dataUrl,
+      confidence: 1.0,
+      summary: 'PDF Page 1 (for Back Crop)',
+      documentType: detectedDocType,
+      documentTitle: detectedDocTitle,
+      pageNumber: 1,
+      boundingBox: { ymin: 0, xmin: 0, ymax: 1000, xmax: 1000 },
+      qualityIssues: { is_blurry: false, has_glare: false, is_partially_cut: false },
+    };
+    allCards.push(backCard);
   }
 
   return {
-    success: allCards.length > 0,
+    success: true,
     documentType: detectedDocType,
     documentTitle: detectedDocTitle,
     frontCard,
     backCard,
     allCards,
     renderedPages: pages,
+    notes: 'PDF rendered successfully. Ready for manual cropping.',
   };
 }

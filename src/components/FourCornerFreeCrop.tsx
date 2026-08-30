@@ -12,6 +12,7 @@ import {
   Crosshair,
   Sliders,
   Check,
+  Grid,
 } from 'lucide-react';
 
 interface FourCornerFreeCropProps {
@@ -23,6 +24,7 @@ interface FourCornerFreeCropProps {
   onResetCorners?: () => void;
   onAutoDetectCorners?: () => void;
   isAiLoading?: boolean;
+  defaultShowGrid?: boolean;
 }
 
 type CornerKey = 'tl' | 'tr' | 'br' | 'bl';
@@ -36,6 +38,7 @@ export const FourCornerFreeCrop: React.FC<FourCornerFreeCropProps> = ({
   onResetCorners,
   onAutoDetectCorners,
   isAiLoading = false,
+  defaultShowGrid = false,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [activeCorner, setActiveCorner] = useState<CornerKey>('tl');
@@ -44,6 +47,7 @@ export const FourCornerFreeCrop: React.FC<FourCornerFreeCropProps> = ({
   const [dragStartPos, setDragStartPos] = useState<Point2D>({ x: 0, y: 0 });
   const [startCorners, setStartCorners] = useState<QuadCorners>(corners);
   const [showMagnifier, setShowMagnifier] = useState(true);
+  const [showPerspectiveGrid, setShowPerspectiveGrid] = useState(defaultShowGrid);
 
   // Corner style configs
   const cornerConfigs: Record<
@@ -241,6 +245,19 @@ export const FourCornerFreeCrop: React.FC<FourCornerFreeCropProps> = ({
 
           <div className="flex items-center gap-2 pointer-events-auto">
             <button
+              onClick={() => setShowPerspectiveGrid(!showPerspectiveGrid)}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all flex items-center gap-1.5 ${
+                showPerspectiveGrid
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-sm'
+                  : 'bg-slate-900/80 text-slate-400 border-slate-700 hover:text-slate-200'
+              }`}
+              title="Toggle alignment grid lines"
+            >
+              <Grid className="w-3.5 h-3.5" />
+              Grid: {showPerspectiveGrid ? 'ON' : 'OFF'}
+            </button>
+
+            <button
               onClick={() => setShowMagnifier(!showMagnifier)}
               className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all ${
                 showMagnifier
@@ -248,7 +265,7 @@ export const FourCornerFreeCrop: React.FC<FourCornerFreeCropProps> = ({
                   : 'bg-slate-900/80 text-slate-400 border-slate-700'
               }`}
             >
-              Loupe Magnifier: {showMagnifier ? 'ON' : 'OFF'}
+              Loupe: {showMagnifier ? 'ON' : 'OFF'}
             </button>
           </div>
         </div>
@@ -274,45 +291,49 @@ export const FourCornerFreeCrop: React.FC<FourCornerFreeCropProps> = ({
             {/* Dark outer perimeter mask */}
             <path d={svgMaskPath} fill="rgba(2, 6, 23, 0.72)" fillRule="evenodd" />
 
-            {/* Perspective 3x3 internal grid lines */}
-            {/* Vertical grid lines */}
-            <line
-              x1={getQuadPoint(0.333, 0).x}
-              y1={getQuadPoint(0.333, 0).y}
-              x2={getQuadPoint(0.333, 1).x}
-              y2={getQuadPoint(0.333, 1).y}
-              stroke="rgba(255, 255, 255, 0.35)"
-              strokeWidth="0.5"
-              strokeDasharray="1.5 1.5"
-            />
-            <line
-              x1={getQuadPoint(0.666, 0).x}
-              y1={getQuadPoint(0.666, 0).y}
-              x2={getQuadPoint(0.666, 1).x}
-              y2={getQuadPoint(0.666, 1).y}
-              stroke="rgba(255, 255, 255, 0.35)"
-              strokeWidth="0.5"
-              strokeDasharray="1.5 1.5"
-            />
-            {/* Horizontal grid lines */}
-            <line
-              x1={getQuadPoint(0, 0.333).x}
-              y1={getQuadPoint(0, 0.333).y}
-              x2={getQuadPoint(1, 0.333).x}
-              y2={getQuadPoint(1, 0.333).y}
-              stroke="rgba(255, 255, 255, 0.35)"
-              strokeWidth="0.5"
-              strokeDasharray="1.5 1.5"
-            />
-            <line
-              x1={getQuadPoint(0, 0.666).x}
-              y1={getQuadPoint(0, 0.666).y}
-              x2={getQuadPoint(1, 0.666).x}
-              y2={getQuadPoint(1, 0.666).y}
-              stroke="rgba(255, 255, 255, 0.35)"
-              strokeWidth="0.5"
-              strokeDasharray="1.5 1.5"
-            />
+            {/* Perspective 3x3 internal grid lines (only when Grid is ON) */}
+            {showPerspectiveGrid && (
+              <>
+                {/* Vertical grid lines */}
+                <line
+                  x1={getQuadPoint(0.333, 0).x}
+                  y1={getQuadPoint(0.333, 0).y}
+                  x2={getQuadPoint(0.333, 1).x}
+                  y2={getQuadPoint(0.333, 1).y}
+                  stroke="rgba(255, 255, 255, 0.35)"
+                  strokeWidth="0.5"
+                  strokeDasharray="1.5 1.5"
+                />
+                <line
+                  x1={getQuadPoint(0.666, 0).x}
+                  y1={getQuadPoint(0.666, 0).y}
+                  x2={getQuadPoint(0.666, 1).x}
+                  y2={getQuadPoint(0.666, 1).y}
+                  stroke="rgba(255, 255, 255, 0.35)"
+                  strokeWidth="0.5"
+                  strokeDasharray="1.5 1.5"
+                />
+                {/* Horizontal grid lines */}
+                <line
+                  x1={getQuadPoint(0, 0.333).x}
+                  y1={getQuadPoint(0, 0.333).y}
+                  x2={getQuadPoint(1, 0.333).x}
+                  y2={getQuadPoint(1, 0.333).y}
+                  stroke="rgba(255, 255, 255, 0.35)"
+                  strokeWidth="0.5"
+                  strokeDasharray="1.5 1.5"
+                />
+                <line
+                  x1={getQuadPoint(0, 0.666).x}
+                  y1={getQuadPoint(0, 0.666).y}
+                  x2={getQuadPoint(1, 0.666).x}
+                  y2={getQuadPoint(1, 0.666).y}
+                  stroke="rgba(255, 255, 255, 0.35)"
+                  strokeWidth="0.5"
+                  strokeDasharray="1.5 1.5"
+                />
+              </>
+            )}
 
             {/* Main Quadrilateral Boundary */}
             <polygon
@@ -504,17 +525,6 @@ export const FourCornerFreeCrop: React.FC<FourCornerFreeCropProps> = ({
 
         {/* Quick Corner Preset Actions */}
         <div className="space-y-2 mt-auto">
-          {onAutoDetectCorners && (
-            <button
-              onClick={onAutoDetectCorners}
-              disabled={isAiLoading}
-              className="w-full inline-flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-xs font-bold text-white shadow-md transition-all"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-yellow-300" />
-              {isAiLoading ? 'Detecting 4 Corners...' : 'AI Auto-Detect Corners'}
-            </button>
-          )}
-
           <div className="grid grid-cols-2 gap-2">
             <button
               onClick={() => {

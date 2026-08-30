@@ -4,14 +4,12 @@ import {
   IDCardSettings,
   PaperSizeConfig,
   IDCardItem,
-  PendingCardDecision,
 } from '../types';
 import {
   ID_CARD_PRESETS,
   PAPER_SIZES,
   SAMPLE_ID_FRONT_URL,
   SAMPLE_ID_BACK_URL,
-  SAMPLE_AMBIGUOUS_ID_URL,
   SAMPLE_AADHAAR_FRONT_URL,
   SAMPLE_AADHAAR_BACK_URL,
   SAMPLE_PAN_CARD_URL,
@@ -42,7 +40,6 @@ import {
   Printer,
   Download,
   CreditCard,
-  Sparkles,
   ArrowLeftRight,
   Layers,
   CheckCircle2,
@@ -51,8 +48,6 @@ import {
   Scissors,
   FileCheck,
   ShieldCheck,
-  HelpCircle,
-  AlertTriangle,
   Check,
   X,
   Wand2,
@@ -98,9 +93,6 @@ export const IDCardStudio: React.FC = () => {
     detectedSummary: 'Aadhaar Back (Address & Secure QR)',
     isAmbiguous: false,
   });
-
-  // Ambiguity Resolution State
-  const [pendingDecision, setPendingDecision] = useState<PendingCardDecision | null>(null);
 
   // PDF Processing & Password Modals State
   const [pdfPasswordModalOpen, setPdfPasswordModalOpen] = useState(false);
@@ -224,7 +216,7 @@ export const IDCardStudio: React.FC = () => {
   // Helper to load single file directly into front or back
   const handleFrontFile = async (file: File) => {
     if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
-      handlePdfFile(file);
+      handlePdfFile(file, undefined, 'front');
       return;
     }
     if (!file.type.startsWith('image/')) return;
@@ -249,7 +241,7 @@ export const IDCardStudio: React.FC = () => {
 
   const handleBackFile = async (file: File) => {
     if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
-      handlePdfFile(file);
+      handlePdfFile(file, undefined, 'back');
       return;
     }
     if (!file.type.startsWith('image/')) return;
@@ -272,12 +264,15 @@ export const IDCardStudio: React.FC = () => {
     if (fileInputBackRef.current) fileInputBackRef.current.value = '';
   };
 
-  // Handle PDF file detection and extraction (Aadhaar, PAN, Voter ID, License)
-  const handlePdfFile = async (file: File, password?: string) => {
-    setIsAiDetecting(true);
+  // Handle PDF file loading and rendering (Aadhaar, PAN, Voter ID, License)
+  const handlePdfFile = async (
+    file: File,
+    password?: string,
+    targetSlot: 'auto' | 'front' | 'back' = 'auto'
+  ) => {
     setPdfIsProcessing(true);
     setPdfPasswordError(null);
-    setAiDetectNotification('Processing PDF document: Rendering high-definition pages & AI detecting ID cards...');
+    setAiDetectNotification('Processing PDF: Rendering high-definition pages in 300 DPI...');
 
     try {
       const result = await detectAndExtractCardsFromPdf(file, {
@@ -285,59 +280,122 @@ export const IDCardStudio: React.FC = () => {
         onProgress: (msg) => setAiDetectNotification(msg),
       });
 
-      if (!result.success || result.allCards.length === 0) {
-        setAiDetectNotification('No distinct ID card borders detected in PDF. You can crop manually.');
+      if (!result.success || (!result.frontCard && !result.backCard && result.renderedPages.length === 0)) {
+        setAiDetectNotification('Could not extract pages from PDF. Please check file format.');
         return;
       }
 
       setPdfDetectionResult(result);
 
-      if (result.frontCard) {
-        setFrontCard({
+      if (targetSlot === 'front') {
+        const cardToUse = result.frontCard || (result.renderedPages[0] ? {
           id: `card-pdf-front-${Date.now()}`,
-          side: 'front',
-          dataUrl: result.frontCard.dataUrl,
-          fileName: `${file.name} (Front)`,
-          rotation: 0,
-          brightness: 0,
-          contrast: 0,
-          saturation: 0,
-          sharpness: 0,
-          detectedSide: 'front',
-          detectedConfidence: result.frontCard.confidence,
-          detectedSummary: result.frontCard.summary || `${result.documentTitle || 'ID'} Front Side`,
-          isAmbiguous: false,
-        });
-      }
+          side: 'front' as const,
+          dataUrl: result.renderedPages[0].dataUrl,
+          confidence: 1.0,
+          summary: 'PDF Front Page',
+          documentType: result.documentType,
+          pageNumber: 1,
+          boundingBox: { ymin: 0, xmin: 0, ymax: 1000, xmax: 1000 },
+          qualityIssues: { is_blurry: false, has_glare: false, is_partially_cut: false }
+        } : null);
 
-      if (result.backCard) {
-        setBackCard({
+        if (cardToUse) {
+          setFrontCard({
+            id: `card-pdf-front-${Date.now()}`,
+            side: 'front',
+            dataUrl: cardToUse.dataUrl,
+            fileName: `${file.name} (Front)`,
+            rotation: 0,
+            brightness: 0,
+            contrast: 0,
+            saturation: 0,
+            sharpness: 0,
+            detectedSide: 'front',
+            detectedConfidence: 1.0,
+            detectedSummary: `${result.documentTitle || 'ID'} Front Side`,
+            isAmbiguous: false,
+          });
+        }
+      } else if (targetSlot === 'back') {
+        const cardToUse = result.backCard || (result.renderedPages[0] ? {
           id: `card-pdf-back-${Date.now()}`,
-          side: 'back',
-          dataUrl: result.backCard.dataUrl,
-          fileName: `${file.name} (Back)`,
-          rotation: 0,
-          brightness: 0,
-          contrast: 0,
-          saturation: 0,
-          sharpness: 0,
-          detectedSide: 'back',
-          detectedConfidence: result.backCard.confidence,
-          detectedSummary: result.backCard.summary || `${result.documentTitle || 'ID'} Back Side`,
-          isAmbiguous: false,
-        });
+          side: 'back' as const,
+          dataUrl: result.renderedPages[0].dataUrl,
+          confidence: 1.0,
+          summary: 'PDF Back Page',
+          documentType: result.documentType,
+          pageNumber: 1,
+          boundingBox: { ymin: 0, xmin: 0, ymax: 1000, xmax: 1000 },
+          qualityIssues: { is_blurry: false, has_glare: false, is_partially_cut: false }
+        } : null);
+
+        if (cardToUse) {
+          setBackCard({
+            id: `card-pdf-back-${Date.now()}`,
+            side: 'back',
+            dataUrl: cardToUse.dataUrl,
+            fileName: `${file.name} (Back)`,
+            rotation: 0,
+            brightness: 0,
+            contrast: 0,
+            saturation: 0,
+            sharpness: 0,
+            detectedSide: 'back',
+            detectedConfidence: 1.0,
+            detectedSummary: `${result.documentTitle || 'ID'} Back Side`,
+            isAmbiguous: false,
+          });
+        }
+      } else {
+        // Auto slot both
+        if (result.frontCard) {
+          setFrontCard({
+            id: `card-pdf-front-${Date.now()}`,
+            side: 'front',
+            dataUrl: result.frontCard.dataUrl,
+            fileName: `${file.name} (Front)`,
+            rotation: 0,
+            brightness: 0,
+            contrast: 0,
+            saturation: 0,
+            sharpness: 0,
+            detectedSide: 'front',
+            detectedConfidence: 1.0,
+            detectedSummary: 'PDF Front Page',
+            isAmbiguous: false,
+          });
+        }
+
+        if (result.backCard) {
+          setBackCard({
+            id: `card-pdf-back-${Date.now()}`,
+            side: 'back',
+            dataUrl: result.backCard.dataUrl,
+            fileName: `${file.name} (Back)`,
+            rotation: 0,
+            brightness: 0,
+            contrast: 0,
+            saturation: 0,
+            sharpness: 0,
+            detectedSide: 'back',
+            detectedConfidence: 1.0,
+            detectedSummary: 'PDF Back Page',
+            isAmbiguous: false,
+          });
+        }
+
+        // Open result confirmation preview
+        setPdfResultModalOpen(true);
       }
 
       // Close password modal if open
       setPdfPasswordModalOpen(false);
       setPdfPendingFile(null);
 
-      // Open result confirmation preview
-      setPdfResultModalOpen(true);
-
-      const docName = result.documentTitle || result.documentType.toUpperCase();
+      const docName = result.documentTitle || 'PDF Document';
       setAiDetectNotification(
-        `✨ Auto-Detected ${docName}: Successfully isolated ${result.allCards.length} Card Region(s)!`
+        `✨ Loaded ${docName}: Ready for manual cropping & printing!`
       );
       confetti({ particleCount: 50, spread: 70, origin: { y: 0.6 } });
     } catch (err: any) {
@@ -353,7 +411,6 @@ export const IDCardStudio: React.FC = () => {
         setAiDetectNotification(`PDF processing note: ${err?.message || 'Could not parse PDF'}`);
       }
     } finally {
-      setIsAiDetecting(false);
       setPdfIsProcessing(false);
     }
   };
@@ -363,7 +420,7 @@ export const IDCardStudio: React.FC = () => {
     handlePdfFile(pdfPendingFile, password);
   };
 
-  // Process multiple or single files with AI detection
+  // Process multiple or single files with instant direct assignment
   const processAutoUploadFiles = async (files: FileList | File[]) => {
     if (!files || files.length === 0) return;
 
@@ -378,97 +435,94 @@ export const IDCardStudio: React.FC = () => {
       return;
     }
 
-    setIsAiDetecting(true);
-    setAiDetectNotification('AI Analyzing card orientation & side features...');
+    const imageFiles = fileArray.filter((f) => f.type.startsWith('image/'));
+    if (imageFiles.length === 0) return;
 
     try {
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        if (!file.type.startsWith('image/')) continue;
+      if (imageFiles.length === 1) {
+        const file = imageFiles[0];
         const dataUrl = await readFileAsDataUrl(file);
-
-        // Call backend AI side detector with safe fallback
-        let detectRes: any = null;
-        try {
-          const res = await fetch('/api/ai/detect-card-side', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ imageBase64: dataUrl }),
-          });
-          if (res.ok) {
-            detectRes = await res.json();
-          }
-        } catch (fetchErr) {
-          console.warn('Backend detection unavailable, using auto-slotting:', fetchErr);
-        }
-
-        if (!detectRes) {
-          detectRes = {
-            side: i === 0 && !frontCard ? 'front' : 'back',
-            confidence: 0.9,
-            summary: i === 0 && !frontCard ? 'Assigned as Front Side' : 'Assigned as Back Side',
-            isAmbiguous: false,
-          };
-        }
-
-        // Check if detection is ambiguous
-        const isAmbiguous =
-          detectRes.isAmbiguous === true ||
-          detectRes.side === 'ambiguous' ||
-          detectRes.side === 'unknown' ||
-          (typeof detectRes.confidence === 'number' && detectRes.confidence < 0.70);
-
-        if (isAmbiguous) {
-          // Detection is ambiguous -> prompt user with manual selection UI
-          setPendingDecision({
-            id: `pending-${Date.now()}-${i}`,
+        if (!frontCard) {
+          setFrontCard({
+            id: `card-front-${Date.now()}`,
+            side: 'front',
+            dataUrl,
             fileName: file.name,
-            dataUrl: dataUrl,
-            detectedSide: detectRes.side || 'ambiguous',
-            confidence: detectRes.confidence ?? 0.5,
-            isAmbiguous: true,
-            reason: detectRes.ambiguityReason || 'AI could not detect a distinct portrait photograph or barcode/address with high certainty.',
-            summary: detectRes.summary || 'Ambiguous card orientation',
-            rotation: detectRes.suggestedRotation || 0,
-          });
-          setAiDetectNotification(`Detection ambiguous for "${file.name}" — Please choose Front or Back manually`);
-        } else {
-          // Clear high-confidence detection
-          const detectedSide: 'front' | 'back' = detectRes.side === 'back' ? 'back' : 'front';
-          const confidencePct = Math.round((detectRes.confidence || 0.95) * 100);
-
-          const newItem: IDCardItem = {
-            id: `card-${Date.now()}-${i}`,
-            side: detectedSide,
-            dataUrl: dataUrl,
-            fileName: file.name,
-            rotation: detectRes.suggestedRotation || 0,
+            rotation: 0,
             brightness: 0,
             contrast: 0,
             saturation: 0,
             sharpness: 0,
-            detectedSide: detectedSide,
-            detectedConfidence: detectRes.confidence || 0.95,
-            detectedSummary: detectRes.summary || `${detectedSide === 'front' ? 'Front Side (Photo)' : 'Back Side (Details)'}`,
+            detectedSide: 'front',
+            detectedConfidence: 1.0,
+            detectedSummary: 'Front Side Card',
             isAmbiguous: false,
-          };
-
-          if (detectedSide === 'front' || (i === 0 && !frontCard)) {
-            setFrontCard(newItem);
-          } else {
-            setBackCard(newItem);
-          }
-
-          setAiDetectNotification(
-            `AI Auto-Detected: ${detectedSide.toUpperCase()} SIDE (${confidencePct}% confidence)`
-          );
+          });
+          setAiDetectNotification(`✓ Loaded "${file.name}" as Front Side. Click Crop to align.`);
+        } else {
+          setBackCard({
+            id: `card-back-${Date.now()}`,
+            side: 'back',
+            dataUrl,
+            fileName: file.name,
+            rotation: 0,
+            brightness: 0,
+            contrast: 0,
+            saturation: 0,
+            sharpness: 0,
+            detectedSide: 'back',
+            detectedConfidence: 1.0,
+            detectedSummary: 'Back Side Card',
+            isAmbiguous: false,
+          });
+          setAiDetectNotification(`✓ Loaded "${file.name}" as Back Side. Click Crop to align.`);
         }
+      } else {
+        // 2 or more image files
+        const frontFile = imageFiles[0];
+        const backFile = imageFiles[1];
+
+        const frontDataUrl = await readFileAsDataUrl(frontFile);
+        const backDataUrl = await readFileAsDataUrl(backFile);
+
+        setFrontCard({
+          id: `card-front-${Date.now()}`,
+          side: 'front',
+          dataUrl: frontDataUrl,
+          fileName: frontFile.name,
+          rotation: 0,
+          brightness: 0,
+          contrast: 0,
+          saturation: 0,
+          sharpness: 0,
+          detectedSide: 'front',
+          detectedConfidence: 1.0,
+          detectedSummary: 'Front Side Card',
+          isAmbiguous: false,
+        });
+
+        setBackCard({
+          id: `card-back-${Date.now()}`,
+          side: 'back',
+          dataUrl: backDataUrl,
+          fileName: backFile.name,
+          rotation: 0,
+          brightness: 0,
+          contrast: 0,
+          saturation: 0,
+          sharpness: 0,
+          detectedSide: 'back',
+          detectedConfidence: 1.0,
+          detectedSummary: 'Back Side Card',
+          isAmbiguous: false,
+        });
+
+        setAiDetectNotification('✓ Front & Back images loaded. Click Crop to adjust boundaries.');
       }
     } catch (err) {
-      console.error('AI Card Detect failed:', err);
-      setAiDetectNotification('Auto-assigned to available card slot');
+      console.error('File load failed:', err);
+      setAiDetectNotification('Could not load image file.');
     } finally {
-      setIsAiDetecting(false);
       setTimeout(() => setAiDetectNotification(null), 5000);
       if (fileInputAutoRef.current) fileInputAutoRef.current.value = '';
     }
@@ -515,53 +569,6 @@ export const IDCardStudio: React.FC = () => {
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       processAutoUploadFiles(e.dataTransfer.files);
     }
-  };
-
-  // Manual resolution of ambiguous card
-  const handleResolvePendingSide = (chosenSide: 'front' | 'back') => {
-    if (!pendingDecision) return;
-    const newItem: IDCardItem = {
-      id: `card-${Date.now()}`,
-      side: chosenSide,
-      dataUrl: pendingDecision.dataUrl,
-      fileName: pendingDecision.fileName,
-      rotation: pendingDecision.rotation || 0,
-      brightness: 0,
-      contrast: 0,
-      saturation: 0,
-      sharpness: 0,
-      detectedSide: chosenSide,
-      detectedConfidence: pendingDecision.confidence,
-      detectedSummary: `Manually Selected as ${chosenSide.toUpperCase()} Side`,
-      isAmbiguous: false,
-    };
-
-    if (chosenSide === 'front') {
-      setFrontCard(newItem);
-      setAiDetectNotification(`Manually Assigned "${pendingDecision.fileName}" as FRONT Side`);
-    } else {
-      setBackCard(newItem);
-      setAiDetectNotification(`Manually Assigned "${pendingDecision.fileName}" as BACK Side`);
-    }
-
-    setPendingDecision(null);
-    setTimeout(() => setAiDetectNotification(null), 4000);
-  };
-
-  // Test ambiguous sample button
-  const handleTestAmbiguousSample = () => {
-    setPendingDecision({
-      id: `pending-test-${Date.now()}`,
-      fileName: 'unclear_id_sample.jpg',
-      dataUrl: SAMPLE_AMBIGUOUS_ID_URL,
-      detectedSide: 'ambiguous',
-      confidence: 0.54,
-      isAmbiguous: true,
-      reason: 'Low confidence (54%): Card features text only without distinct portrait photograph or barcode/magnetic stripe.',
-      summary: 'Ambiguous card orientation',
-      rotation: 0,
-    });
-    setAiDetectNotification('Ambiguity Detected: Please select Front or Back');
   };
 
   // Swap Front and Back Cards
@@ -743,7 +750,7 @@ export const IDCardStudio: React.FC = () => {
             </h1>
           </div>
           <p className="text-sm text-slate-400 mt-1">
-            Auto front & back side AI detection, 4-corner perspective warping, CR-80 sizing, foldable laminating layouts, and multi-card A4 printing.
+            Upload your ID PDF (Aadhaar, PAN, Voter Card, etc.) or photos. Manually crop and align Front and Back sides, adjust perspective, and prepare 300 DPI ready-to-print sheets.
           </p>
         </div>
 
@@ -752,7 +759,6 @@ export const IDCardStudio: React.FC = () => {
           {/* Sample e-Aadhaar */}
           <button
             onClick={() => {
-              setPendingDecision(null);
               setFrontCard({
                 id: 'f-aadhaar',
                 side: 'front',
@@ -764,8 +770,8 @@ export const IDCardStudio: React.FC = () => {
                 saturation: 0,
                 sharpness: 0,
                 detectedSide: 'front',
-                detectedConfidence: 0.99,
-                detectedSummary: 'Aadhaar Front (Portrait, Name & UID Number)',
+                detectedConfidence: 1.0,
+                detectedSummary: 'Aadhaar Front (Portrait, Name & UID)',
                 isAmbiguous: false,
               });
               setBackCard({
@@ -779,11 +785,11 @@ export const IDCardStudio: React.FC = () => {
                 saturation: 0,
                 sharpness: 0,
                 detectedSide: 'back',
-                detectedConfidence: 0.98,
-                detectedSummary: 'Aadhaar Back (Address & Secure QR Code)',
+                detectedConfidence: 1.0,
+                detectedSummary: 'Aadhaar Back (Address & QR Code)',
                 isAmbiguous: false,
               });
-              setAiDetectNotification('✓ Loaded Sample e-Aadhaar (Front & Back Auto-Detected)');
+              setAiDetectNotification('✓ Loaded Sample e-Aadhaar (Front & Back ready for crop)');
               setTimeout(() => setAiDetectNotification(null), 3500);
               confetti({ particleCount: 35, spread: 60, origin: { y: 0.6 } });
             }}
@@ -797,7 +803,6 @@ export const IDCardStudio: React.FC = () => {
           {/* Sample PAN Card */}
           <button
             onClick={() => {
-              setPendingDecision(null);
               setFrontCard({
                 id: 'f-pan',
                 side: 'front',
@@ -809,12 +814,12 @@ export const IDCardStudio: React.FC = () => {
                 saturation: 0,
                 sharpness: 0,
                 detectedSide: 'front',
-                detectedConfidence: 0.99,
-                detectedSummary: 'PAN Front (Income Tax Dept, Photo & Permanent Account No)',
+                detectedConfidence: 1.0,
+                detectedSummary: 'PAN Front (Income Tax Dept & PAN)',
                 isAmbiguous: false,
               });
               setBackCard(null);
-              setAiDetectNotification('✓ Loaded Sample PAN Card (Front detected, single side)');
+              setAiDetectNotification('✓ Loaded Sample PAN Card (Front side)');
               setTimeout(() => setAiDetectNotification(null), 3500);
             }}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl glass-card hover:bg-white/10 text-slate-300 hover:text-white text-xs font-medium border border-white/10 transition-all"
@@ -827,7 +832,6 @@ export const IDCardStudio: React.FC = () => {
           {/* Sample Voter ID */}
           <button
             onClick={() => {
-              setPendingDecision(null);
               setFrontCard({
                 id: 'f-voter',
                 side: 'front',
@@ -839,8 +843,8 @@ export const IDCardStudio: React.FC = () => {
                 saturation: 0,
                 sharpness: 0,
                 detectedSide: 'front',
-                detectedConfidence: 0.98,
-                detectedSummary: 'Voter ID Front (Election Commission of India, Photo & EPIC No)',
+                detectedConfidence: 1.0,
+                detectedSummary: 'Voter ID Front (Photo & EPIC No)',
                 isAmbiguous: false,
               });
               setBackCard({
@@ -854,11 +858,11 @@ export const IDCardStudio: React.FC = () => {
                 saturation: 0,
                 sharpness: 0,
                 detectedSide: 'back',
-                detectedConfidence: 0.97,
-                detectedSummary: 'Voter ID Back (Polling Station, Address & Barcode)',
+                detectedConfidence: 1.0,
+                detectedSummary: 'Voter ID Back (Address & Barcode)',
                 isAmbiguous: false,
               });
-              setAiDetectNotification('✓ Loaded Sample Voter ID (Front & Back Auto-Detected)');
+              setAiDetectNotification('✓ Loaded Sample Voter ID (Front & Back ready for crop)');
               setTimeout(() => setAiDetectNotification(null), 3500);
             }}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl glass-card hover:bg-white/10 text-slate-300 hover:text-white text-xs font-medium border border-white/10 transition-all"
@@ -871,7 +875,6 @@ export const IDCardStudio: React.FC = () => {
           {/* Standard ID */}
           <button
             onClick={() => {
-              setPendingDecision(null);
               setFrontCard({
                 id: 'f-sample',
                 side: 'front',
@@ -883,7 +886,7 @@ export const IDCardStudio: React.FC = () => {
                 saturation: 0,
                 sharpness: 0,
                 detectedSide: 'front',
-                detectedConfidence: 0.98,
+                detectedConfidence: 1.0,
                 detectedSummary: 'Front Side (Portrait & ID)',
                 isAmbiguous: false,
               });
@@ -898,7 +901,7 @@ export const IDCardStudio: React.FC = () => {
                 saturation: 0,
                 sharpness: 0,
                 detectedSide: 'back',
-                detectedConfidence: 0.95,
+                detectedConfidence: 1.0,
                 detectedSummary: 'Back Side (Address & Barcode)',
                 isAmbiguous: false,
               });
@@ -910,15 +913,6 @@ export const IDCardStudio: React.FC = () => {
             <RefreshCw className="w-3.5 h-3.5" />
             Driver's License
           </button>
-
-          <button
-            onClick={handleTestAmbiguousSample}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 hover:text-amber-200 text-xs font-medium border border-amber-500/30 transition-all"
-            title="Simulate an upload with ambiguous features to test the manual selection interface"
-          >
-            <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-            Test Ambiguous
-          </button>
         </div>
       </div>
 
@@ -926,17 +920,17 @@ export const IDCardStudio: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Left Col (5 Cols): Upload, Side Switcher, Crop */}
         <div className="lg:col-span-5 space-y-5">
-          {/* Card 1: Smart Upload Area with AI Side Detection */}
+          {/* Card 1: Upload Area */}
           <div className="glass-card rounded-2xl p-5 border border-white/10 shadow-lg space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
                 <CreditCard className="w-4 h-4 text-emerald-400" />
                 1. Upload PDF or Images (Front & Back)
               </h2>
-              {isAiDetecting && (
+              {pdfIsProcessing && (
                 <span className="text-xs text-emerald-400 font-medium flex items-center gap-1 animate-pulse">
-                  <Sparkles className="w-3.5 h-3.5 animate-spin" />
-                  {pdfIsProcessing ? 'AI Processing PDF...' : 'AI Detecting Sides...'}
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  Rendering PDF in 300 DPI...
                 </span>
               )}
             </div>
@@ -970,21 +964,21 @@ export const IDCardStudio: React.FC = () => {
                   processAutoUploadFiles(e.dataTransfer.files);
                 }
               }}
-              className={`border-2 border-dashed rounded-2xl p-4 text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-2 group ${
+              className={`border-2 border-dashed rounded-2xl p-5 text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-2.5 group ${
                 isDraggingAuto
                   ? 'border-emerald-400 bg-emerald-500/20 scale-[1.01]'
                   : 'border-emerald-500/30 hover:border-emerald-400/60 bg-emerald-500/5 hover:bg-emerald-500/10'
               }`}
             >
-              <div className="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400 group-hover:scale-110 transition-transform">
-                <Sparkles className="w-5 h-5" />
+              <div className="w-11 h-11 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400 group-hover:scale-110 transition-transform">
+                <FileText className="w-5 h-5" />
               </div>
               <div>
                 <span className="text-xs font-bold text-emerald-300 block">
-                  Drop PDF or ID Photos (Auto-Detects Front & Back)
+                  Upload ID PDF or Images (Front & Back)
                 </span>
-                <span className="text-[11px] text-emerald-400/80 block mt-0.5">
-                  Supports <strong>Aadhaar PDF, PAN, Voter ID, Driving License</strong>. AI auto-detects card bounding boxes, isolates front/back sides, and handles password-protected files.
+                <span className="text-[11px] text-slate-300 block mt-1 max-w-sm mx-auto leading-relaxed">
+                  Upload your ID PDF (Aadhaar, PAN, Voter Card, etc.) or photos. Manually crop, adjust, and align your document before printing.
                 </span>
               </div>
 
@@ -1008,80 +1002,11 @@ export const IDCardStudio: React.FC = () => {
               </div>
             </div>
 
-            {/* AI Status Notification */}
+            {/* Status Notification */}
             {aiDetectNotification && (
               <div className="p-2.5 bg-emerald-500/15 border border-emerald-500/30 rounded-xl text-xs font-semibold text-emerald-300 flex items-center gap-2 animate-fade-in">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
                 <span>{aiDetectNotification}</span>
-              </div>
-            )}
-
-            {/* Ambiguity Resolution Banner / Manual Option */}
-            {pendingDecision && (
-              <div className="p-4 rounded-2xl bg-amber-500/15 border-2 border-amber-500/40 space-y-3 animate-fade-in shadow-xl">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-xl bg-amber-500/25 text-amber-300 flex items-center justify-center shrink-0 border border-amber-400/30">
-                      <HelpCircle className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-xs font-bold text-amber-200 uppercase tracking-wide">
-                          Ambiguous Card Side Detected
-                        </h3>
-                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-400/20 text-amber-300 font-mono">
-                          {Math.round(pendingDecision.confidence * 100)}% Confidence
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-300 mt-0.5 leading-relaxed">
-                        {pendingDecision.reason || 'Could not verify whether this image is the Front or Back side.'}
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setPendingDecision(null)}
-                    className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors"
-                    title="Dismiss"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-
-                {/* Ambiguous Image Preview & Manual Select Buttons */}
-                <div className="flex flex-col sm:flex-row items-center gap-3 pt-1">
-                  <div className="relative w-24 h-16 rounded-xl bg-slate-900 border border-white/15 overflow-hidden shrink-0 shadow-inner">
-                    <img
-                      src={pendingDecision.dataUrl}
-                      alt="Ambiguous Card"
-                      className="w-full h-full object-cover"
-                    />
-                    <span className="absolute bottom-0.5 left-0.5 right-0.5 bg-black/80 text-amber-300 text-[8px] font-mono px-1 py-0.5 rounded truncate text-center">
-                      {pendingDecision.fileName}
-                    </span>
-                  </div>
-
-                  <div className="flex-1 w-full flex flex-col gap-1.5">
-                    <span className="text-[11px] font-medium text-slate-300">
-                      Please choose which side this card represents:
-                    </span>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        onClick={() => handleResolvePendingSide('front')}
-                        className="py-2 px-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-lg shadow-blue-900/40 border border-blue-400/40 transition-all hover:scale-[1.02] active:scale-95"
-                      >
-                        <CreditCard className="w-3.5 h-3.5" />
-                        Set as FRONT Side
-                      </button>
-                      <button
-                        onClick={() => handleResolvePendingSide('back')}
-                        className="py-2 px-3 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-lg shadow-amber-900/40 border border-amber-400/40 transition-all hover:scale-[1.02] active:scale-95"
-                      >
-                        <Layers className="w-3.5 h-3.5" />
-                        Set as BACK Side
-                      </button>
-                    </div>
-                  </div>
-                </div>
               </div>
             )}
 
@@ -1169,7 +1094,7 @@ export const IDCardStudio: React.FC = () => {
                     type="file"
                     ref={fileInputFrontRef}
                     onChange={handleFrontUpload}
-                    accept="image/*"
+                    accept="image/*,application/pdf,.pdf"
                     className="hidden"
                   />
                   <button
@@ -1288,7 +1213,7 @@ export const IDCardStudio: React.FC = () => {
                     type="file"
                     ref={fileInputBackRef}
                     onChange={handleBackUpload}
-                    accept="image/*"
+                    accept="image/*,application/pdf,.pdf"
                     className="hidden"
                   />
                   <button

@@ -56,10 +56,32 @@ export function warpPerspectiveCanvas(
     u2: number, v2: number
   ) => {
     c.save();
+    // Expand clipping region by a small fraction of a pixel (0.5px) around centroid to eliminate antialiasing seam gaps/grid lines
+    const cx = (x0 + x1 + x2) / 3;
+    const cy = (y0 + y1 + y2) / 3;
+    const expand = 0.5; // subpixel bleed
+    const vx0 = x0 - cx;
+    const vy0 = y0 - cy;
+    const len0 = Math.hypot(vx0, vy0) || 1;
+    const ex0 = x0 + (vx0 / len0) * expand;
+    const ey0 = y0 + (vy0 / len0) * expand;
+
+    const vx1 = x1 - cx;
+    const vy1 = y1 - cy;
+    const len1 = Math.hypot(vx1, vy1) || 1;
+    const ex1 = x1 + (vx1 / len1) * expand;
+    const ey1 = y1 + (vy1 / len1) * expand;
+
+    const vx2 = x2 - cx;
+    const vy2 = y2 - cy;
+    const len2 = Math.hypot(vx2, vy2) || 1;
+    const ex2 = x2 + (vx2 / len2) * expand;
+    const ey2 = y2 + (vy2 / len2) * expand;
+
     c.beginPath();
-    c.moveTo(x0, y0);
-    c.lineTo(x1, y1);
-    c.lineTo(x2, y2);
+    c.moveTo(ex0, ey0);
+    c.lineTo(ex1, ey1);
+    c.lineTo(ex2, ey2);
     c.closePath();
     c.clip();
 
@@ -77,11 +99,13 @@ export function warpPerspectiveCanvas(
     const f = (u0 * (v1 * y2 - v2 * y1) - v0 * (u1 * y2 - u2 * y1) + y0 * (u1 * v2 - u2 * v1)) / denom;
 
     c.transform(a, b, cVal, d, e, f);
+    c.imageSmoothingEnabled = true;
+    c.imageSmoothingQuality = 'high';
     c.drawImage(img, 0, 0);
     c.restore();
   };
 
-  const SUBDIVISIONS = 16;
+  const SUBDIVISIONS = 32;
   const dw = targetWidthPx / SUBDIVISIONS;
   const dh = targetHeightPx / SUBDIVISIONS;
 
