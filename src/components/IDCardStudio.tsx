@@ -1114,10 +1114,11 @@ export const IDCardStudio: React.FC = () => {
                     <>
                       <button
                         onClick={() => setActiveCropSide('front')}
-                        className="p-1 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/30 text-blue-300 text-[11px]"
-                        title="Crop Front"
+                        className="px-2 py-1 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/30 text-blue-300 text-[11px] font-medium flex items-center gap-1 transition-colors"
+                        title="Manual Crop Front ID Card (Standard 85.60 × 54.00 mm)"
                       >
                         <Crop className="w-3.5 h-3.5" />
+                        Crop
                       </button>
                       <button
                         onClick={() => setBgRemovalSide('front')}
@@ -1233,10 +1234,11 @@ export const IDCardStudio: React.FC = () => {
                     <>
                       <button
                         onClick={() => setActiveCropSide('back')}
-                        className="p-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 text-[11px]"
-                        title="Crop Back"
+                        className="px-2 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 text-amber-300 text-[11px] font-medium flex items-center gap-1 transition-colors"
+                        title="Manual Crop Back ID Card (Standard 85.60 × 54.00 mm)"
                       >
                         <Crop className="w-3.5 h-3.5" />
+                        Crop
                       </button>
                       <button
                         onClick={() => setBgRemovalSide('back')}

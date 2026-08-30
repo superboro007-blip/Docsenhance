@@ -3,7 +3,6 @@ import { IDCardPreset, QuadCorners } from '../types';
 import { FourCornerFreeCrop } from './FourCornerFreeCrop';
 import {
   Crop,
-  Sparkles,
   Check,
   X,
   CreditCard,
@@ -19,7 +18,14 @@ import {
   Maximize2,
   Sliders,
   Crosshair,
+  RotateCcw,
+  Eye,
+  AlertCircle,
+  Sparkles,
+  Layers,
+  Info,
 } from 'lucide-react';
+import { warpPerspectiveCanvas } from '../utils/imageProcessing';
 
 interface IDCardCropModalProps {
   isOpen: boolean;
@@ -49,12 +55,16 @@ export const IDCardCropModal: React.FC<IDCardCropModalProps> = ({
   onApplyCrop,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const previewCanvasRef = useRef<HTMLCanvasElement>(null);
+  const sourceImageRef = useRef<HTMLImageElement | null>(null);
+
   const targetWidth = preset.id === 'dl_custom' ? customWidthMm : preset.widthMm;
   const targetHeight = preset.id === 'dl_custom' ? customHeightMm : preset.heightMm;
-  const presetAspectRatio = targetWidth / targetHeight; // approx 1.586 for CR80
+  const presetAspectRatio = targetWidth / targetHeight; // ~1.585 for CR-80 (85.60 x 54.00 mm)
 
   const [engineMode, setEngineMode] = useState<CropEngineMode>('box');
   const [isFreeform, setIsFreeform] = useState(false);
+  const [statusNotification, setStatusNotification] = useState<string | null>(null);
 
   const [cropBox, setCropBox] = useState<{ x: number; y: number; width: number; height: number }>({
     x: 5,
@@ -80,24 +90,43 @@ export const IDCardCropModal: React.FC<IDCardCropModalProps> = ({
     height: 0,
   });
 
+  // Calculate default standard size crop box
+  const getStandardCropBox = useCallback(() => {
+    const defaultW = 86;
+    const defaultH = defaultW / presetAspectRatio;
+    return {
+      x: (100 - defaultW) / 2,
+      y: Math.max(3, (100 - Math.min(94, defaultH)) / 2),
+      width: defaultW,
+      height: Math.min(94, defaultH),
+    };
+  }, [presetAspectRatio]);
+
+  // Load and cache source image for real-time live preview
+  useEffect(() => {
+    if (!imageSrc) return;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      sourceImageRef.current = img;
+      renderLivePreview();
+    };
+    img.src = imageSrc;
+  }, [imageSrc]);
+
+  // Reset to initial or standard on open
   useEffect(() => {
     if (!isOpen) return;
 
     if (initialCropBox) {
       setCropBox(initialCropBox);
     } else {
-      const defaultW = 88;
-      const defaultH = defaultW / presetAspectRatio;
-      setCropBox({
-        x: (100 - defaultW) / 2,
-        y: Math.max(4, (100 - defaultH) / 2),
-        width: defaultW,
-        height: defaultH > 92 ? 92 : defaultH,
-      });
+      setCropBox(getStandardCropBox());
     }
 
     if (initialCorners) {
       setCorners(initialCorners);
+      setEngineMode('quad');
     } else {
       setCorners({
         tl: { x: 6, y: 6 },
@@ -105,10 +134,67 @@ export const IDCardCropModal: React.FC<IDCardCropModalProps> = ({
         br: { x: 94, y: 94 },
         bl: { x: 6, y: 94 },
       });
+      setEngineMode('box');
     }
-  }, [isOpen, initialCropBox, initialCorners, presetAspectRatio]);
+  }, [isOpen, initialCropBox, initialCorners, getStandardCropBox]);
+
+  // Update Live Preview Canvas
+  const renderLivePreview = useCallback(() => {
+    const canvas = previewCanvasRef.current;
+    const img = sourceImageRef.current;
+    if (!canvas || !img || !img.complete || img.naturalWidth === 0) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const previewW = 340;
+    const previewH = Math.round(previewW / presetAspectRatio);
+    canvas.width = previewW;
+    canvas.height = previewH;
+
+    ctx.clearRect(0, 0, previewW, previewH);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+
+    if (engineMode === 'quad') {
+      // Perspective quad warp preview
+      try {
+        const warpedCanvas = warpPerspectiveCanvas(img, corners, previewW, previewH, true);
+        ctx.drawImage(warpedCanvas, 0, 0, previewW, previewH);
+      } catch {
+        // fallback
+      }
+    } else {
+      // Standard box crop preview
+      const sx = (cropBox.x / 100) * img.naturalWidth;
+      const sy = (cropBox.y / 100) * img.naturalHeight;
+      const sw = (cropBox.width / 100) * img.naturalWidth;
+      const sh = (cropBox.height / 100) * img.naturalHeight;
+
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, previewW, previewH);
+    }
+  }, [cropBox, corners, engineMode, presetAspectRatio]);
+
+  useEffect(() => {
+    renderLivePreview();
+  }, [cropBox, corners, engineMode, renderLivePreview]);
 
   const currentRatio = isFreeform ? null : presetAspectRatio;
+
+  // Step 5: Reset to standard size
+  const handleResetToStandardSize = () => {
+    const stdBox = getStandardCropBox();
+    setCropBox(stdBox);
+    setIsFreeform(false);
+    setCorners({
+      tl: { x: 6, y: 6 },
+      tr: { x: 94, y: 6 },
+      br: { x: 94, y: 94 },
+      bl: { x: 6, y: 94 },
+    });
+    setStatusNotification(`✓ Reset to Standard Size (${targetWidth.toFixed(2)} mm × ${targetHeight.toFixed(2)} mm)`);
+    setTimeout(() => setStatusNotification(null), 3000);
+  };
 
   const nudge = (dx: number, dy: number) => {
     setCropBox((prev) => ({
@@ -293,73 +379,123 @@ export const IDCardCropModal: React.FC<IDCardCropModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-3 sm:p-5">
-      <div className="bg-slate-900 text-slate-100 rounded-2xl shadow-2xl max-w-5xl w-full max-h-[96vh] flex flex-col overflow-hidden border border-slate-700 animate-in fade-in zoom-in-95 duration-200">
-        {/* Header */}
-        <div className="px-5 py-3.5 border-b border-slate-800 flex items-center justify-between bg-slate-950/80">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-2 sm:p-4">
+      <div className="bg-slate-900 text-slate-100 rounded-2xl shadow-2xl max-w-6xl w-full max-h-[96vh] flex flex-col overflow-hidden border border-slate-700/80 animate-in fade-in zoom-in-95 duration-200">
+        
+        {/* Top Header */}
+        <div className="px-5 py-3.5 border-b border-slate-800 flex items-center justify-between bg-slate-950/90">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
               <CreditCard className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-white flex items-center gap-2">
-                ID Card Manual Crop Studio ({side === 'front' ? 'FRONT SIDE' : 'BACK SIDE'})
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-bold text-white">
+                  Manual Crop Studio
+                </h2>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border uppercase tracking-wider ${
+                  side === 'front' 
+                    ? 'bg-blue-500/20 text-blue-300 border-blue-500/30' 
+                    : 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                }`}>
+                  {side === 'front' ? 'Front Side' : 'Back Side'}
+                </span>
+              </div>
               <p className="text-xs text-slate-400">
-                Preset: <span className="text-emerald-400 font-semibold">{preset.name}</span> ({targetWidth} × {targetHeight} mm)
+                Standard CR-80 format: <span className="text-emerald-400 font-semibold">{targetWidth.toFixed(2)} mm × {targetHeight.toFixed(2)} mm</span> (300 DPI ready)
               </p>
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            className="p-2 text-slate-400 hover:text-white rounded-full hover:bg-slate-800 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleResetToStandardSize}
+              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition-all hover:scale-[1.02] active:scale-95"
+              title="Reset the crop box to standard 85.60 mm × 54.00 mm dimensions"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-emerald-400" />
+              Reset to Standard Size ({targetWidth.toFixed(2)} × {targetHeight.toFixed(2)} mm)
+            </button>
+            <button
+              onClick={onClose}
+              className="p-2 text-slate-400 hover:text-white rounded-full hover:bg-slate-800 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
-        {/* Primary Crop Engine Mode Switcher */}
+        {/* Prompt & Guidance Banner */}
+        <div className="px-5 py-2.5 bg-gradient-to-r from-emerald-950/40 via-slate-900 to-blue-950/40 border-b border-emerald-500/20 flex items-start gap-2.5 text-xs">
+          <Info className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+          <div className="flex-1 text-slate-300 leading-relaxed">
+            <span className="font-semibold text-emerald-300">Manual Crop Guide: </span>
+            Adjust your ID card manually. The standard crop size is <strong className="text-white">{targetWidth.toFixed(2)} mm × {targetHeight.toFixed(2)} mm</strong>. If the automatic box does not fit correctly in your PDF, use the manual crop tool to drag, resize, and align the box until the card fits perfectly.
+          </div>
+        </div>
+
+        {/* Primary Crop Mode Switcher & Flow Bar */}
         <div className="px-5 py-2.5 bg-slate-950 border-b border-slate-800 flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-900 border border-white/10">
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-900 border border-white/10">
+              <button
+                onClick={() => setEngineMode('box')}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  engineMode === 'box'
+                    ? 'bg-emerald-600 text-white shadow-md'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Crop className="w-3.5 h-3.5" />
+                Manual Crop Mode
+              </button>
+              <button
+                onClick={() => setEngineMode('quad')}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  engineMode === 'quad'
+                    ? 'bg-purple-600 text-white shadow-md'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Crosshair className="w-3.5 h-3.5 text-yellow-300" />
+                4-Corner Perspective Warp
+              </button>
+            </div>
+
+            {/* Quick action: Reset button on mobile */}
             <button
-              onClick={() => setEngineMode('box')}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                engineMode === 'box'
-                  ? 'bg-emerald-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
+              onClick={handleResetToStandardSize}
+              className="sm:hidden inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800 text-xs font-medium text-slate-300"
             >
-              <Crop className="w-3.5 h-3.5" />
-              Standard Box Crop
-            </button>
-            <button
-              onClick={() => setEngineMode('quad')}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                engineMode === 'quad'
-                  ? 'bg-purple-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Crosshair className="w-3.5 h-3.5 text-yellow-300" />
-              4-Corner Freecrop (Perspective Warp)
+              <RotateCcw className="w-3 h-3 text-emerald-400" /> Reset Size
             </button>
           </div>
 
-          <div className="text-[11px] text-slate-400 font-medium">
-            {engineMode === 'quad' ? (
-              <span className="text-purple-300 flex items-center gap-1">
-                <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
-                Drag any of the 4 corner pins individually to fix perspective, tilt, or scanner skew
-              </span>
-            ) : (
-              <span className="text-emerald-300">
-                Preset frame size: {targetWidth} × {targetHeight} mm ({preset.name})
-              </span>
-            )}
+          {/* Step Indicator Flow */}
+          <div className="hidden md:flex items-center gap-2 text-[11px] font-medium text-slate-400">
+            <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+              Step 1: Standard Box
+            </span>
+            <span className="text-slate-600">→</span>
+            <span className="px-2 py-0.5 rounded bg-emerald-950/60 text-emerald-300 border border-emerald-500/30">
+              Step 2: Drag & Adjust
+            </span>
+            <span className="text-slate-600">→</span>
+            <span className="px-2 py-0.5 rounded bg-blue-950/60 text-blue-300 border border-blue-500/30">
+              Step 3: Live Preview
+            </span>
           </div>
         </div>
 
+        {/* Status / Reset Notification Alert */}
+        {statusNotification && (
+          <div className="px-5 py-2 bg-emerald-500/20 border-b border-emerald-500/40 text-xs font-semibold text-emerald-300 flex items-center gap-2 animate-in fade-in duration-150">
+            <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+            {statusNotification}
+          </div>
+        )}
+
+        {/* Main Workspace Body */}
         {engineMode === 'quad' ? (
           <div className="p-4 flex-1 overflow-y-auto max-h-[620px]">
             <FourCornerFreeCrop
@@ -375,264 +511,290 @@ export const IDCardCropModal: React.FC<IDCardCropModalProps> = ({
                   br: { x: 94, y: 94 },
                   bl: { x: 6, y: 94 },
                 });
+                setStatusNotification('✓ Reset 4 corner pins to perimeter');
+                setTimeout(() => setStatusNotification(null), 3000);
               }}
             />
           </div>
         ) : (
           <>
-            {/* Toolbar */}
-        <div className="px-5 py-2.5 bg-slate-950/60 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-slate-400 font-semibold flex items-center gap-1">
-              <Sliders className="w-3.5 h-3.5 text-emerald-400" /> Ratio Lock:
-            </span>
-            <button
-              onClick={() => setIsFreeform(false)}
-              className={`px-3 py-1.5 rounded-lg font-medium transition-all flex items-center gap-1 ${
-                !isFreeform
-                  ? 'bg-emerald-600 text-white shadow-sm font-semibold'
-                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-              }`}
-            >
-              <Lock className="w-3 h-3" />
-              Standard CR80 Ratio ({targetWidth}×{targetHeight} mm)
-            </button>
-            <button
-              onClick={() => setIsFreeform(true)}
-              className={`px-3 py-1.5 rounded-lg font-medium transition-all flex items-center gap-1 ${
-                isFreeform
-                  ? 'bg-purple-600 text-white shadow-sm font-semibold'
-                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-              }`}
-            >
-              <Unlock className="w-3 h-3" />
-              Freeform Manual Crop
-            </button>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={centerBox}
-              className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center gap-1 font-medium"
-            >
-              Center Frame
-            </button>
-            <button
-              onClick={maximizeCrop}
-              className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center gap-1 font-medium"
-            >
-              <Maximize2 className="w-3 h-3" /> Maximize
-            </button>
-          </div>
-        </div>
-
-        {/* Workspace */}
-        <div className="flex-1 flex flex-col lg:flex-row overflow-hidden min-h-[380px] max-h-[580px]">
-          {/* Visual Canvas */}
-          <div className="flex-1 bg-slate-950 p-4 flex items-center justify-center overflow-hidden relative select-none">
-            <div
-              ref={containerRef}
-              className="relative inline-block max-w-full max-h-full shadow-2xl rounded-md overflow-hidden"
-              style={{ touchAction: 'none' }}
-            >
-              <img
-                src={imageSrc}
-                alt="ID Card Crop"
-                className="max-h-[480px] max-w-full object-contain pointer-events-none rounded-sm"
-              />
-
-              {/* Dark Mask */}
-              <div className="absolute inset-0 pointer-events-none">
-                <div className="absolute bg-black/70 top-0 left-0 right-0" style={{ height: `${cropBox.y}%` }} />
-                <div
-                  className="absolute bg-black/70 bottom-0 left-0 right-0"
-                  style={{ height: `${Math.max(0, 100 - (cropBox.y + cropBox.height))}%` }}
-                />
-                <div
-                  className="absolute bg-black/70 left-0"
-                  style={{ top: `${cropBox.y}%`, height: `${cropBox.height}%`, width: `${cropBox.x}%` }}
-                />
-                <div
-                  className="absolute bg-black/70 right-0"
-                  style={{
-                    top: `${cropBox.y}%`,
-                    height: `${cropBox.height}%`,
-                    width: `${Math.max(0, 100 - (cropBox.x + cropBox.width))}%`,
-                  }}
-                />
+            {/* Box Mode Secondary Toolbar */}
+            <div className="px-5 py-2 bg-slate-950/70 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-slate-400 font-semibold flex items-center gap-1">
+                  <Sliders className="w-3.5 h-3.5 text-emerald-400" /> Ratio Mode:
+                </span>
+                <button
+                  onClick={() => setIsFreeform(false)}
+                  className={`px-3 py-1.5 rounded-lg font-medium transition-all flex items-center gap-1.5 ${
+                    !isFreeform
+                      ? 'bg-emerald-600 text-white shadow-sm font-semibold'
+                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  <Lock className="w-3.5 h-3.5" />
+                  Locked CR-80 ({targetWidth.toFixed(2)} × {targetHeight.toFixed(2)} mm)
+                </button>
+                <button
+                  onClick={() => setIsFreeform(true)}
+                  className={`px-3 py-1.5 rounded-lg font-medium transition-all flex items-center gap-1.5 ${
+                    isFreeform
+                      ? 'bg-purple-600 text-white shadow-sm font-semibold'
+                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  <Unlock className="w-3.5 h-3.5" />
+                  Freeform Manual Crop
+                </button>
               </div>
 
-              {/* Selection Box */}
-              <div
-                className="absolute border-2 border-emerald-400 ring-2 ring-emerald-500/30 rounded-lg shadow-2xl cursor-move"
-                style={{
-                  left: `${cropBox.x}%`,
-                  top: `${cropBox.y}%`,
-                  width: `${cropBox.width}%`,
-                  height: `${cropBox.height}%`,
-                }}
-                onMouseDown={(e) => handleMouseDown(e, 'move')}
-                onTouchStart={(e) => handleMouseDown(e, 'move')}
-              >
-                {/* 8 Drag Handles */}
-                <div
-                  className="absolute -top-2.5 -left-2.5 w-5 h-5 bg-white border-2 border-emerald-600 rounded-full cursor-nwse-resize shadow-lg hover:scale-125 transition-transform"
-                  onMouseDown={(e) => handleMouseDown(e, 'tl')}
-                  onTouchStart={(e) => handleMouseDown(e, 'tl')}
-                />
-                <div
-                  className="absolute -top-2.5 left-1/2 -translate-x-1/2 w-4 h-4 bg-white border-2 border-emerald-600 rounded-sm cursor-ns-resize shadow-lg hover:scale-125 transition-transform"
-                  onMouseDown={(e) => handleMouseDown(e, 'n')}
-                  onTouchStart={(e) => handleMouseDown(e, 'n')}
-                />
-                <div
-                  className="absolute -top-2.5 -right-2.5 w-5 h-5 bg-white border-2 border-emerald-600 rounded-full cursor-nesw-resize shadow-lg hover:scale-125 transition-transform"
-                  onMouseDown={(e) => handleMouseDown(e, 'tr')}
-                  onTouchStart={(e) => handleMouseDown(e, 'tr')}
-                />
-                <div
-                  className="absolute top-1/2 -translate-y-1/2 -right-2.5 w-4 h-4 bg-white border-2 border-emerald-600 rounded-sm cursor-ew-resize shadow-lg hover:scale-125 transition-transform"
-                  onMouseDown={(e) => handleMouseDown(e, 'e')}
-                  onTouchStart={(e) => handleMouseDown(e, 'e')}
-                />
-                <div
-                  className="absolute -bottom-2.5 -right-2.5 w-5 h-5 bg-white border-2 border-emerald-600 rounded-full cursor-nwse-resize shadow-lg hover:scale-125 transition-transform"
-                  onMouseDown={(e) => handleMouseDown(e, 'br')}
-                  onTouchStart={(e) => handleMouseDown(e, 'br')}
-                />
-                <div
-                  className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 w-4 h-4 bg-white border-2 border-emerald-600 rounded-sm cursor-ns-resize shadow-lg hover:scale-125 transition-transform"
-                  onMouseDown={(e) => handleMouseDown(e, 's')}
-                  onTouchStart={(e) => handleMouseDown(e, 's')}
-                />
-                <div
-                  className="absolute -bottom-2.5 -left-2.5 w-5 h-5 bg-white border-2 border-emerald-600 rounded-full cursor-nesw-resize shadow-lg hover:scale-125 transition-transform"
-                  onMouseDown={(e) => handleMouseDown(e, 'bl')}
-                  onTouchStart={(e) => handleMouseDown(e, 'bl')}
-                />
-                <div
-                  className="absolute top-1/2 -translate-y-1/2 -left-2.5 w-4 h-4 bg-white border-2 border-emerald-600 rounded-sm cursor-ew-resize shadow-lg hover:scale-125 transition-transform"
-                  onMouseDown={(e) => handleMouseDown(e, 'w')}
-                  onTouchStart={(e) => handleMouseDown(e, 'w')}
-                />
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={centerBox}
+                  className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center gap-1 font-medium transition-colors"
+                >
+                  Center Frame
+                </button>
+                <button
+                  onClick={maximizeCrop}
+                  className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center gap-1 font-medium transition-colors"
+                >
+                  <Maximize2 className="w-3.5 h-3.5" /> Maximize
+                </button>
+              </div>
+            </div>
 
-                {/* Dimension Tag */}
-                <div className="absolute bottom-1 right-1 bg-black/80 text-emerald-300 text-[10px] px-1.5 py-0.5 rounded font-mono pointer-events-none border border-emerald-500/30">
-                  {Math.round(cropBox.width)}% × {Math.round(cropBox.height)}%
+            {/* Workspace: Interactive Image Canvas + Controls + Real-Time Live Preview */}
+            <div className="flex-1 flex flex-col lg:flex-row overflow-hidden min-h-[380px] max-h-[580px]">
+              {/* Visual Canvas Area */}
+              <div className="flex-1 bg-slate-950 p-4 flex items-center justify-center overflow-hidden relative select-none">
+                <div
+                  ref={containerRef}
+                  className="relative inline-block max-w-full max-h-full shadow-2xl rounded-lg overflow-hidden border border-slate-800"
+                  style={{ touchAction: 'none' }}
+                >
+                  <img
+                    src={imageSrc}
+                    alt="ID Card Source Scan"
+                    className="max-h-[480px] max-w-full object-contain pointer-events-none rounded-sm"
+                  />
+
+                  {/* Dark Perimeter Mask */}
+                  <div className="absolute inset-0 pointer-events-none">
+                    <div className="absolute bg-black/75 top-0 left-0 right-0" style={{ height: `${cropBox.y}%` }} />
+                    <div
+                      className="absolute bg-black/75 bottom-0 left-0 right-0"
+                      style={{ height: `${Math.max(0, 100 - (cropBox.y + cropBox.height))}%` }}
+                    />
+                    <div
+                      className="absolute bg-black/75 left-0"
+                      style={{ top: `${cropBox.y}%`, height: `${cropBox.height}%`, width: `${cropBox.x}%` }}
+                    />
+                    <div
+                      className="absolute bg-black/75 right-0"
+                      style={{
+                        top: `${cropBox.y}%`,
+                        height: `${cropBox.height}%`,
+                        width: `${Math.max(0, 100 - (cropBox.x + cropBox.width))}%`,
+                      }}
+                    />
+                  </div>
+
+                  {/* Selection Crop Box */}
+                  <div
+                    className="absolute border-2 border-emerald-400 ring-2 ring-emerald-500/40 rounded-lg shadow-2xl cursor-move group"
+                    style={{
+                      left: `${cropBox.x}%`,
+                      top: `${cropBox.y}%`,
+                      width: `${cropBox.width}%`,
+                      height: `${cropBox.height}%`,
+                    }}
+                    onMouseDown={(e) => handleMouseDown(e, 'move')}
+                    onTouchStart={(e) => handleMouseDown(e, 'move')}
+                  >
+                    {/* Drag to Adjust Central Label */}
+                    <div className="absolute top-2 left-2 bg-emerald-950/85 backdrop-blur-sm text-emerald-300 text-[10px] font-bold px-2 py-0.5 rounded-full pointer-events-none border border-emerald-500/40 flex items-center gap-1 shadow-md">
+                      <Move className="w-3 h-3" />
+                      Drag to Adjust
+                    </div>
+
+                    {/* Standard Dimensions Badge */}
+                    <div className="absolute bottom-2 right-2 bg-slate-950/90 text-emerald-300 text-[10px] px-2 py-0.5 rounded font-mono pointer-events-none border border-emerald-500/40 shadow-md">
+                      {targetWidth.toFixed(1)} × {targetHeight.toFixed(1)} mm
+                    </div>
+
+                    {/* 8 Drag Resize Handles */}
+                    {/* Corners */}
+                    <div
+                      className="absolute -top-2.5 -left-2.5 w-5 h-5 bg-white border-2 border-emerald-600 rounded-full cursor-nwse-resize shadow-xl hover:scale-125 transition-transform"
+                      onMouseDown={(e) => handleMouseDown(e, 'tl')}
+                      onTouchStart={(e) => handleMouseDown(e, 'tl')}
+                      title="Resize top-left"
+                    />
+                    <div
+                      className="absolute -top-2.5 -right-2.5 w-5 h-5 bg-white border-2 border-emerald-600 rounded-full cursor-nesw-resize shadow-xl hover:scale-125 transition-transform"
+                      onMouseDown={(e) => handleMouseDown(e, 'tr')}
+                      onTouchStart={(e) => handleMouseDown(e, 'tr')}
+                      title="Resize top-right"
+                    />
+                    <div
+                      className="absolute -bottom-2.5 -right-2.5 w-5 h-5 bg-white border-2 border-emerald-600 rounded-full cursor-nwse-resize shadow-xl hover:scale-125 transition-transform"
+                      onMouseDown={(e) => handleMouseDown(e, 'br')}
+                      onTouchStart={(e) => handleMouseDown(e, 'br')}
+                      title="Resize bottom-right"
+                    />
+                    <div
+                      className="absolute -bottom-2.5 -left-2.5 w-5 h-5 bg-white border-2 border-emerald-600 rounded-full cursor-nesw-resize shadow-xl hover:scale-125 transition-transform"
+                      onMouseDown={(e) => handleMouseDown(e, 'bl')}
+                      onTouchStart={(e) => handleMouseDown(e, 'bl')}
+                      title="Resize bottom-left"
+                    />
+
+                    {/* Edges */}
+                    <div
+                      className="absolute -top-2 left-1/2 -translate-x-1/2 w-5 h-3.5 bg-white border-2 border-emerald-600 rounded-sm cursor-ns-resize shadow-xl hover:scale-125 transition-transform"
+                      onMouseDown={(e) => handleMouseDown(e, 'n')}
+                      onTouchStart={(e) => handleMouseDown(e, 'n')}
+                    />
+                    <div
+                      className="absolute top-1/2 -translate-y-1/2 -right-2 w-3.5 h-5 bg-white border-2 border-emerald-600 rounded-sm cursor-ew-resize shadow-xl hover:scale-125 transition-transform"
+                      onMouseDown={(e) => handleMouseDown(e, 'e')}
+                      onTouchStart={(e) => handleMouseDown(e, 'e')}
+                    />
+                    <div
+                      className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-5 h-3.5 bg-white border-2 border-emerald-600 rounded-sm cursor-ns-resize shadow-xl hover:scale-125 transition-transform"
+                      onMouseDown={(e) => handleMouseDown(e, 's')}
+                      onTouchStart={(e) => handleMouseDown(e, 's')}
+                    />
+                    <div
+                      className="absolute top-1/2 -translate-y-1/2 -left-2 w-3.5 h-5 bg-white border-2 border-emerald-600 rounded-sm cursor-ew-resize shadow-xl hover:scale-125 transition-transform"
+                      onMouseDown={(e) => handleMouseDown(e, 'w')}
+                      onTouchStart={(e) => handleMouseDown(e, 'w')}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Side Panel: Fine-Tuning + Step 4 Live Preview */}
+              <div className="w-full lg:w-80 bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-800 p-4 space-y-4 overflow-y-auto">
+                {/* Live Preview Card */}
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                      <Eye className="w-3.5 h-3.5 text-blue-400" /> Live Output Preview
+                    </span>
+                    <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                      CR-80 Format
+                    </span>
+                  </div>
+
+                  <div className="relative rounded-lg overflow-hidden border border-white/10 bg-slate-900 flex items-center justify-center p-1 shadow-inner">
+                    <canvas
+                      ref={previewCanvasRef}
+                      className="w-full h-auto rounded object-contain shadow-md"
+                      style={{ maxHeight: '140px' }}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between text-[11px] text-slate-400 pt-0.5">
+                    <span>Target Size:</span>
+                    <span className="font-semibold text-slate-200">{targetWidth.toFixed(2)} × {targetHeight.toFixed(2)} mm</span>
+                  </div>
+                </div>
+
+                {/* Reset to Standard Size Button */}
+                <button
+                  onClick={handleResetToStandardSize}
+                  className="w-full py-2 px-3 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 text-xs font-bold border border-emerald-500/30 flex items-center justify-center gap-2 transition-all hover:scale-[1.01] active:scale-98 shadow-sm"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  Reset to Standard Size ({targetWidth.toFixed(2)} × {targetHeight.toFixed(2)} mm)
+                </button>
+
+                {/* Position Nudge Controls */}
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">
+                  <div className="text-[11px] font-semibold text-slate-300 flex items-center gap-1">
+                    <Move className="w-3 h-3 text-emerald-400" /> Fine-Tune Position (Nudge)
+                  </div>
+                  <div className="flex flex-col items-center gap-1">
+                    <button
+                      onClick={() => nudge(0, -1)}
+                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200"
+                      title="Nudge Up"
+                    >
+                      <ArrowUp className="w-4 h-4" />
+                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => nudge(-1, 0)}
+                        className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200"
+                        title="Nudge Left"
+                      >
+                        <ArrowLeft className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={centerBox}
+                        className="px-2 py-1 text-[10px] font-bold rounded-lg bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-600/50"
+                      >
+                        Center
+                      </button>
+                      <button
+                        onClick={() => nudge(1, 0)}
+                        className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200"
+                        title="Nudge Right"
+                      >
+                        <ArrowRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <button
+                      onClick={() => nudge(0, 1)}
+                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200"
+                      title="Nudge Down"
+                    >
+                      <ArrowDown className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Crop Box Zoom / Scale */}
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">
+                  <div className="text-[11px] font-semibold text-slate-300">Crop Box Scale</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => zoomCrop(0.94)}
+                      className="inline-flex items-center justify-center gap-1 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200"
+                    >
+                      <ZoomIn className="w-3.5 h-3.5 text-emerald-400" /> Zoom In
+                    </button>
+                    <button
+                      onClick={() => zoomCrop(1.06)}
+                      className="inline-flex items-center justify-center gap-1 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200"
+                    >
+                      <ZoomOut className="w-3.5 h-3.5 text-teal-400" /> Zoom Out
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          </>
+        )}
 
-          {/* Right Fine-Tuning Panel */}
-          <div className="w-full lg:w-72 bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-800 p-4 space-y-4 overflow-y-auto">
-            <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-              <Move className="w-3.5 h-3.5 text-emerald-400" /> Card Nudge & Scale
-            </h3>
-
-            {/* Position Nudge */}
-            <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">
-              <div className="text-[11px] font-medium text-slate-400 text-center">Nudge Position</div>
-              <div className="flex flex-col items-center gap-1">
-                <button
-                  onClick={() => nudge(0, -1)}
-                  className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200"
-                >
-                  <ArrowUp className="w-4 h-4" />
-                </button>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => nudge(-1, 0)}
-                    className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200"
-                  >
-                    <ArrowLeft className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={centerBox}
-                    className="px-2 py-1 text-[10px] font-bold rounded-lg bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-600/50"
-                  >
-                    Center
-                  </button>
-                  <button
-                    onClick={() => nudge(1, 0)}
-                    className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200"
-                  >
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
-                </div>
-                <button
-                  onClick={() => nudge(0, 1)}
-                  className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200"
-                >
-                  <ArrowDown className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-
-            {/* Zoom / Scale */}
-            <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">
-              <div className="text-[11px] font-medium text-slate-400">Crop Box Scale</div>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => zoomCrop(0.92)}
-                  className="inline-flex items-center justify-center gap-1 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200"
-                >
-                  <ZoomIn className="w-3.5 h-3.5 text-emerald-400" /> Zoom In
-                </button>
-                <button
-                  onClick={() => zoomCrop(1.08)}
-                  className="inline-flex items-center justify-center gap-1 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200"
-                >
-                  <ZoomOut className="w-3.5 h-3.5 text-teal-400" /> Zoom Out
-                </button>
-              </div>
-            </div>
-
-            {/* Width Slider */}
-            <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-3">
-              <div className="space-y-1">
-                <div className="flex justify-between text-[11px] text-slate-400">
-                  <span>Width Size</span>
-                  <span className="font-mono text-emerald-400">{Math.round(cropBox.width)}%</span>
-                </div>
-                <input
-                  type="range"
-                  min="20"
-                  max="100"
-                  value={cropBox.width}
-                  onChange={(e) => {
-                    const w = parseFloat(e.target.value);
-                    const h = currentRatio ? w / currentRatio : cropBox.height;
-                    setCropBox((prev) => ({
-                      ...prev,
-                      width: w,
-                      height: Math.min(100, h),
-                      x: Math.max(0, Math.min(100 - w, prev.x)),
-                    }));
-                  }}
-                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      </>
-    )}
-
-        {/* Footer */}
-        <div className="px-5 py-3 bg-slate-950 border-t border-slate-800 flex items-center justify-between flex-wrap gap-3">
+        {/* Footer Confirmation Bar */}
+        <div className="px-5 py-3.5 bg-slate-950 border-t border-slate-800 flex items-center justify-between flex-wrap gap-3">
           <div className="text-xs text-slate-400 flex items-center gap-2">
             {engineMode === 'quad' ? (
               <>
                 <span className="inline-block w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
                 <span className="text-purple-300 font-medium">
-                  4-Corner Perspective Warp active ({targetWidth} × {targetHeight} mm target)
+                  4-Corner Perspective Warp active ({targetWidth.toFixed(2)} × {targetHeight.toFixed(2)} mm output)
                 </span>
               </>
             ) : (
               <>
                 <span className="inline-block w-2 h-2 rounded-full bg-emerald-400" />
-                {isFreeform ? 'Freeform Crop' : `Locked to ${targetWidth} × ${targetHeight} mm`}
+                <span className="text-slate-300">
+                  {isFreeform ? 'Freeform Crop Mode' : `Locked to Standard ${targetWidth.toFixed(2)} × ${targetHeight.toFixed(2)} mm`}
+                </span>
               </>
             )}
           </div>
@@ -653,10 +815,10 @@ export const IDCardCropModal: React.FC<IDCardCropModalProps> = ({
                 }
                 onClose();
               }}
-              className="inline-flex items-center gap-2 px-5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl shadow-lg transition-all"
+              className="inline-flex items-center gap-2 px-6 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl shadow-lg shadow-emerald-950/50 transition-all hover:scale-[1.02] active:scale-95 border border-emerald-400/40"
             >
               <Check className="w-4 h-4" />
-              {engineMode === 'quad' ? 'Apply Perspective Freecrop' : 'Apply Crop & Frame'}
+              Confirm Crop
             </button>
           </div>
         </div>
@@ -664,4 +826,3 @@ export const IDCardCropModal: React.FC<IDCardCropModalProps> = ({
     </div>
   );
 };
-
