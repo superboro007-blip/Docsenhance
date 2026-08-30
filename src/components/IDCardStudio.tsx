@@ -12,6 +12,11 @@ import {
   SAMPLE_ID_FRONT_URL,
   SAMPLE_ID_BACK_URL,
   SAMPLE_AMBIGUOUS_ID_URL,
+  SAMPLE_AADHAAR_FRONT_URL,
+  SAMPLE_AADHAAR_BACK_URL,
+  SAMPLE_PAN_CARD_URL,
+  SAMPLE_VOTER_ID_FRONT_URL,
+  SAMPLE_VOTER_ID_BACK_URL,
 } from '../data/presets';
 import {
   processIDCardItem,
@@ -19,9 +24,17 @@ import {
   exportToPDF,
   exportDuplexIDCardPDF,
 } from '../utils/imageProcessing';
+import {
+  detectAndExtractCardsFromPdf,
+  PdfPasswordRequiredError,
+  ExtractedCard,
+  RenderedPdfPage,
+} from '../utils/pdfProcessor';
 import { IDCardCropModal } from './IDCardCropModal';
 import { WebcamModal } from './WebcamModal';
 import { BackgroundRemovalModal } from './BackgroundRemovalModal';
+import { PdfPasswordModal } from './PdfPasswordModal';
+import { PdfCardResultModal } from './PdfCardResultModal';
 import {
   Upload,
   Camera,
@@ -45,6 +58,9 @@ import {
   Wand2,
   Plus,
   Minus,
+  FileText,
+  FileBadge,
+  Lock,
 } from 'lucide-react';
 
 import confetti from 'canvas-confetti';
@@ -54,37 +70,52 @@ export const IDCardStudio: React.FC = () => {
   const [frontCard, setFrontCard] = useState<IDCardItem | null>({
     id: 'front-1',
     side: 'front',
-    dataUrl: SAMPLE_ID_FRONT_URL,
-    fileName: 'sample_id_front.jpg',
+    dataUrl: SAMPLE_AADHAAR_FRONT_URL,
+    fileName: 'aadhaar_card_front.jpg',
     rotation: 0,
     brightness: 0,
     contrast: 0,
     saturation: 0,
     sharpness: 0,
     detectedSide: 'front',
-    detectedConfidence: 0.96,
-    detectedSummary: 'Sample Front (Portrait & ID)',
+    detectedConfidence: 0.98,
+    detectedSummary: 'Aadhaar Front (Photo, Name & UID)',
     isAmbiguous: false,
   });
 
   const [backCard, setBackCard] = useState<IDCardItem | null>({
     id: 'back-1',
     side: 'back',
-    dataUrl: SAMPLE_ID_BACK_URL,
-    fileName: 'sample_id_back.jpg',
+    dataUrl: SAMPLE_AADHAAR_BACK_URL,
+    fileName: 'aadhaar_card_back.jpg',
     rotation: 0,
     brightness: 0,
     contrast: 0,
     saturation: 0,
     sharpness: 0,
     detectedSide: 'back',
-    detectedConfidence: 0.94,
-    detectedSummary: 'Sample Back (Details & Barcode)',
+    detectedConfidence: 0.97,
+    detectedSummary: 'Aadhaar Back (Address & Secure QR)',
     isAmbiguous: false,
   });
 
   // Ambiguity Resolution State
   const [pendingDecision, setPendingDecision] = useState<PendingCardDecision | null>(null);
+
+  // PDF Processing & Password Modals State
+  const [pdfPasswordModalOpen, setPdfPasswordModalOpen] = useState(false);
+  const [pdfPendingFile, setPdfPendingFile] = useState<File | null>(null);
+  const [pdfPasswordError, setPdfPasswordError] = useState<string | null>(null);
+  const [pdfIsProcessing, setPdfIsProcessing] = useState(false);
+  const [pdfResultModalOpen, setPdfResultModalOpen] = useState(false);
+  const [pdfDetectionResult, setPdfDetectionResult] = useState<{
+    documentType: string;
+    documentTitle: string;
+    frontCard?: ExtractedCard;
+    backCard?: ExtractedCard;
+    allCards: ExtractedCard[];
+    renderedPages: RenderedPdfPage[];
+  } | null>(null);
 
   // Settings
   const [selectedPreset, setSelectedPreset] = useState<IDCardPreset>(ID_CARD_PRESETS[0]); // CR80 Standard
@@ -192,6 +223,10 @@ export const IDCardStudio: React.FC = () => {
 
   // Helper to load single file directly into front or back
   const handleFrontFile = async (file: File) => {
+    if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+      handlePdfFile(file);
+      return;
+    }
     if (!file.type.startsWith('image/')) return;
     const dataUrl = await readFileAsDataUrl(file);
     setFrontCard({
@@ -213,6 +248,10 @@ export const IDCardStudio: React.FC = () => {
   };
 
   const handleBackFile = async (file: File) => {
+    if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+      handlePdfFile(file);
+      return;
+    }
     if (!file.type.startsWith('image/')) return;
     const dataUrl = await readFileAsDataUrl(file);
     setBackCard({
@@ -233,9 +272,111 @@ export const IDCardStudio: React.FC = () => {
     if (fileInputBackRef.current) fileInputBackRef.current.value = '';
   };
 
+  // Handle PDF file detection and extraction (Aadhaar, PAN, Voter ID, License)
+  const handlePdfFile = async (file: File, password?: string) => {
+    setIsAiDetecting(true);
+    setPdfIsProcessing(true);
+    setPdfPasswordError(null);
+    setAiDetectNotification('Processing PDF document: Rendering high-definition pages & AI detecting ID cards...');
+
+    try {
+      const result = await detectAndExtractCardsFromPdf(file, {
+        password,
+        onProgress: (msg) => setAiDetectNotification(msg),
+      });
+
+      if (!result.success || result.allCards.length === 0) {
+        setAiDetectNotification('No distinct ID card borders detected in PDF. You can crop manually.');
+        return;
+      }
+
+      setPdfDetectionResult(result);
+
+      if (result.frontCard) {
+        setFrontCard({
+          id: `card-pdf-front-${Date.now()}`,
+          side: 'front',
+          dataUrl: result.frontCard.dataUrl,
+          fileName: `${file.name} (Front)`,
+          rotation: 0,
+          brightness: 0,
+          contrast: 0,
+          saturation: 0,
+          sharpness: 0,
+          detectedSide: 'front',
+          detectedConfidence: result.frontCard.confidence,
+          detectedSummary: result.frontCard.summary || `${result.documentTitle || 'ID'} Front Side`,
+          isAmbiguous: false,
+        });
+      }
+
+      if (result.backCard) {
+        setBackCard({
+          id: `card-pdf-back-${Date.now()}`,
+          side: 'back',
+          dataUrl: result.backCard.dataUrl,
+          fileName: `${file.name} (Back)`,
+          rotation: 0,
+          brightness: 0,
+          contrast: 0,
+          saturation: 0,
+          sharpness: 0,
+          detectedSide: 'back',
+          detectedConfidence: result.backCard.confidence,
+          detectedSummary: result.backCard.summary || `${result.documentTitle || 'ID'} Back Side`,
+          isAmbiguous: false,
+        });
+      }
+
+      // Close password modal if open
+      setPdfPasswordModalOpen(false);
+      setPdfPendingFile(null);
+
+      // Open result confirmation preview
+      setPdfResultModalOpen(true);
+
+      const docName = result.documentTitle || result.documentType.toUpperCase();
+      setAiDetectNotification(
+        `✨ Auto-Detected ${docName}: Successfully isolated ${result.allCards.length} Card Region(s)!`
+      );
+      confetti({ particleCount: 50, spread: 70, origin: { y: 0.6 } });
+    } catch (err: any) {
+      if (err instanceof PdfPasswordRequiredError || err?.name === 'PdfPasswordRequiredError') {
+        setPdfPendingFile(file);
+        setPdfPasswordModalOpen(true);
+        if (password) {
+          setPdfPasswordError('Incorrect password. Please check and try again.');
+        }
+        setAiDetectNotification('This PDF document is password protected. Enter password to unlock.');
+      } else {
+        console.error('PDF extraction failed:', err);
+        setAiDetectNotification(`PDF processing note: ${err?.message || 'Could not parse PDF'}`);
+      }
+    } finally {
+      setIsAiDetecting(false);
+      setPdfIsProcessing(false);
+    }
+  };
+
+  const handlePdfPasswordSubmit = (password: string) => {
+    if (!pdfPendingFile) return;
+    handlePdfFile(pdfPendingFile, password);
+  };
+
   // Process multiple or single files with AI detection
   const processAutoUploadFiles = async (files: FileList | File[]) => {
     if (!files || files.length === 0) return;
+
+    // Check if any PDF is among the uploaded files
+    const fileArray = Array.from(files);
+    const pdfFile = fileArray.find(
+      (f) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')
+    );
+
+    if (pdfFile) {
+      await handlePdfFile(pdfFile);
+      return;
+    }
 
     setIsAiDetecting(true);
     setAiDetectNotification('AI Analyzing card orientation & side features...');
@@ -608,6 +749,126 @@ export const IDCardStudio: React.FC = () => {
 
         {/* Quick Sample / Reset buttons */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Sample e-Aadhaar */}
+          <button
+            onClick={() => {
+              setPendingDecision(null);
+              setFrontCard({
+                id: 'f-aadhaar',
+                side: 'front',
+                dataUrl: SAMPLE_AADHAAR_FRONT_URL,
+                fileName: 'aadhaar_card_front.png',
+                rotation: 0,
+                brightness: 0,
+                contrast: 0,
+                saturation: 0,
+                sharpness: 0,
+                detectedSide: 'front',
+                detectedConfidence: 0.99,
+                detectedSummary: 'Aadhaar Front (Portrait, Name & UID Number)',
+                isAmbiguous: false,
+              });
+              setBackCard({
+                id: 'b-aadhaar',
+                side: 'back',
+                dataUrl: SAMPLE_AADHAAR_BACK_URL,
+                fileName: 'aadhaar_card_back.png',
+                rotation: 0,
+                brightness: 0,
+                contrast: 0,
+                saturation: 0,
+                sharpness: 0,
+                detectedSide: 'back',
+                detectedConfidence: 0.98,
+                detectedSummary: 'Aadhaar Back (Address & Secure QR Code)',
+                isAmbiguous: false,
+              });
+              setAiDetectNotification('✓ Loaded Sample e-Aadhaar (Front & Back Auto-Detected)');
+              setTimeout(() => setAiDetectNotification(null), 3500);
+              confetti({ particleCount: 35, spread: 60, origin: { y: 0.6 } });
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 hover:text-emerald-200 text-xs font-semibold border border-emerald-500/30 transition-all"
+            title="Load Sample e-Aadhaar Front & Back Card"
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+            e-Aadhaar Card
+          </button>
+
+          {/* Sample PAN Card */}
+          <button
+            onClick={() => {
+              setPendingDecision(null);
+              setFrontCard({
+                id: 'f-pan',
+                side: 'front',
+                dataUrl: SAMPLE_PAN_CARD_URL,
+                fileName: 'pan_card_front.png',
+                rotation: 0,
+                brightness: 0,
+                contrast: 0,
+                saturation: 0,
+                sharpness: 0,
+                detectedSide: 'front',
+                detectedConfidence: 0.99,
+                detectedSummary: 'PAN Front (Income Tax Dept, Photo & Permanent Account No)',
+                isAmbiguous: false,
+              });
+              setBackCard(null);
+              setAiDetectNotification('✓ Loaded Sample PAN Card (Front detected, single side)');
+              setTimeout(() => setAiDetectNotification(null), 3500);
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl glass-card hover:bg-white/10 text-slate-300 hover:text-white text-xs font-medium border border-white/10 transition-all"
+            title="Load Sample PAN Card"
+          >
+            <FileBadge className="w-3.5 h-3.5 text-blue-400" />
+            PAN Card
+          </button>
+
+          {/* Sample Voter ID */}
+          <button
+            onClick={() => {
+              setPendingDecision(null);
+              setFrontCard({
+                id: 'f-voter',
+                side: 'front',
+                dataUrl: SAMPLE_VOTER_ID_FRONT_URL,
+                fileName: 'voter_id_epic_front.png',
+                rotation: 0,
+                brightness: 0,
+                contrast: 0,
+                saturation: 0,
+                sharpness: 0,
+                detectedSide: 'front',
+                detectedConfidence: 0.98,
+                detectedSummary: 'Voter ID Front (Election Commission of India, Photo & EPIC No)',
+                isAmbiguous: false,
+              });
+              setBackCard({
+                id: 'b-voter',
+                side: 'back',
+                dataUrl: SAMPLE_VOTER_ID_BACK_URL,
+                fileName: 'voter_id_epic_back.png',
+                rotation: 0,
+                brightness: 0,
+                contrast: 0,
+                saturation: 0,
+                sharpness: 0,
+                detectedSide: 'back',
+                detectedConfidence: 0.97,
+                detectedSummary: 'Voter ID Back (Polling Station, Address & Barcode)',
+                isAmbiguous: false,
+              });
+              setAiDetectNotification('✓ Loaded Sample Voter ID (Front & Back Auto-Detected)');
+              setTimeout(() => setAiDetectNotification(null), 3500);
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl glass-card hover:bg-white/10 text-slate-300 hover:text-white text-xs font-medium border border-white/10 transition-all"
+            title="Load Sample Voter ID Card (EPIC)"
+          >
+            <FileCheck className="w-3.5 h-3.5 text-indigo-400" />
+            Voter ID (EPIC)
+          </button>
+
+          {/* Standard ID */}
           <button
             onClick={() => {
               setPendingDecision(null);
@@ -647,7 +908,7 @@ export const IDCardStudio: React.FC = () => {
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl glass-card hover:bg-white/10 text-slate-300 hover:text-white text-xs font-medium border border-white/10 transition-all"
           >
             <RefreshCw className="w-3.5 h-3.5" />
-            Load Sample ID
+            Driver's License
           </button>
 
           <button
@@ -656,7 +917,7 @@ export const IDCardStudio: React.FC = () => {
             title="Simulate an upload with ambiguous features to test the manual selection interface"
           >
             <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-            Simulate Ambiguous Upload
+            Test Ambiguous
           </button>
         </div>
       </div>
@@ -670,12 +931,12 @@ export const IDCardStudio: React.FC = () => {
             <div className="flex items-center justify-between">
               <h2 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
                 <CreditCard className="w-4 h-4 text-emerald-400" />
-                1. Upload ID Card (Front & Back)
+                1. Upload PDF or Images (Front & Back)
               </h2>
               {isAiDetecting && (
                 <span className="text-xs text-emerald-400 font-medium flex items-center gap-1 animate-pulse">
                   <Sparkles className="w-3.5 h-3.5 animate-spin" />
-                  AI Detecting Sides...
+                  {pdfIsProcessing ? 'AI Processing PDF...' : 'AI Detecting Sides...'}
                 </span>
               )}
             </div>
@@ -686,7 +947,7 @@ export const IDCardStudio: React.FC = () => {
               ref={fileInputAutoRef}
               onChange={handleAutoUpload}
               multiple
-              accept="image/*"
+              accept="image/*,application/pdf,.pdf"
               className="hidden"
             />
             <div
@@ -720,10 +981,29 @@ export const IDCardStudio: React.FC = () => {
               </div>
               <div>
                 <span className="text-xs font-bold text-emerald-300 block">
-                  Drop ID Card Images Here (Auto-Detects Front & Back)
+                  Drop PDF or ID Photos (Auto-Detects Front & Back)
                 </span>
                 <span className="text-[11px] text-emerald-400/80 block mt-0.5">
-                  AI automatically classifies Front vs Back. If detection is ambiguous, manual selection options appear immediately.
+                  Supports <strong>Aadhaar PDF, PAN, Voter ID, Driving License</strong>. AI auto-detects card bounding boxes, isolates front/back sides, and handles password-protected files.
+                </span>
+              </div>
+
+              {/* Supported Badges */}
+              <div className="flex flex-wrap items-center justify-center gap-1.5 mt-1">
+                <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 text-[10px] font-semibold flex items-center gap-1">
+                  <FileText className="w-3 h-3" /> PDF Documents
+                </span>
+                <span className="px-2 py-0.5 rounded-md bg-blue-500/20 text-blue-300 text-[10px] font-semibold">
+                  Aadhaar / e-KYC
+                </span>
+                <span className="px-2 py-0.5 rounded-md bg-purple-500/20 text-purple-300 text-[10px] font-semibold">
+                  PAN Card
+                </span>
+                <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 text-[10px] font-semibold">
+                  Voter ID
+                </span>
+                <span className="px-2 py-0.5 rounded-md bg-slate-700/60 text-slate-300 text-[10px] font-semibold">
+                  JPG / PNG
                 </span>
               </div>
             </div>
@@ -1518,6 +1798,65 @@ export const IDCardStudio: React.FC = () => {
           mode={webcamMode}
         />
       )}
+
+      {/* PDF Password Prompt Modal (e.g. e-Aadhaar) */}
+      <PdfPasswordModal
+        isOpen={pdfPasswordModalOpen}
+        fileName={pdfPendingFile?.name || 'Document.pdf'}
+        isLoading={pdfIsProcessing}
+        errorMessage={pdfPasswordError}
+        onClose={() => {
+          setPdfPasswordModalOpen(false);
+          setPdfPendingFile(null);
+          setPdfPasswordError(null);
+        }}
+        onSubmit={handlePdfPasswordSubmit}
+      />
+
+      {/* PDF Detection & Extraction Result Confirmation Modal */}
+      <PdfCardResultModal
+        isOpen={pdfResultModalOpen}
+        onClose={() => setPdfResultModalOpen(false)}
+        result={pdfDetectionResult}
+        onApply={(front, back) => {
+          if (front) {
+            setFrontCard({
+              id: `card-pdf-front-${Date.now()}`,
+              side: 'front',
+              dataUrl: front.dataUrl,
+              fileName: `${pdfPendingFile?.name || 'PDF'} (Front)`,
+              rotation: 0,
+              brightness: 0,
+              contrast: 0,
+              saturation: 0,
+              sharpness: 0,
+              detectedSide: 'front',
+              detectedConfidence: front.confidence,
+              detectedSummary: front.summary || 'Front Side',
+              isAmbiguous: false,
+            });
+          }
+          if (back) {
+            setBackCard({
+              id: `card-pdf-back-${Date.now()}`,
+              side: 'back',
+              dataUrl: back.dataUrl,
+              fileName: `${pdfPendingFile?.name || 'PDF'} (Back)`,
+              rotation: 0,
+              brightness: 0,
+              contrast: 0,
+              saturation: 0,
+              sharpness: 0,
+              detectedSide: 'back',
+              detectedConfidence: back.confidence,
+              detectedSummary: back.summary || 'Back Side',
+              isAmbiguous: false,
+            });
+          }
+          setAiDetectNotification('✓ Cards applied directly to ID Card Studio canvas');
+          setTimeout(() => setAiDetectNotification(null), 3000);
+        }}
+      />
     </div>
   );
 };

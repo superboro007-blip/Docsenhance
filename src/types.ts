@@ -81,6 +81,43 @@ export interface PendingCardDecision {
   rotation?: number;
 }
 
+export interface DetectedIdCard {
+  side: 'FRONT' | 'BACK' | 'BOTH';
+  confidence_score: number;
+  bounding_box_1000: {
+    ymin: number;
+    xmin: number;
+    ymax: number;
+    xmax: number;
+  };
+  rotation_needed_degrees: number;
+  detected_elements?: {
+    has_portrait_photo?: boolean;
+    has_name?: boolean;
+    has_id_number?: boolean;
+    id_number_masked?: string;
+    holder_name?: string;
+    has_address?: boolean;
+    has_qr_or_barcode?: boolean;
+  };
+  quality_issues: {
+    is_blurry: boolean;
+    has_glare: boolean;
+    is_partially_cut: boolean;
+  };
+  summary: string;
+}
+
+export interface PdfIdDetectionResult {
+  page_number: number;
+  id_detected: boolean;
+  document_type: 'aadhaar' | 'pan' | 'voter_id' | 'driving_license' | 'national_id' | 'passport' | 'id_card' | 'unknown' | string;
+  document_title?: string;
+  cards_found: DetectedIdCard[];
+  notes?: string;
+  fallback?: boolean;
+}
+
 export interface IDCardSettings {
   presetId: string;
   customWidthMm: number;

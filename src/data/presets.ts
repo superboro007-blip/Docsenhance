@@ -381,3 +381,209 @@ export const SAMPLE_ID_BACK_URL = `data:image/svg+xml;utf8,${encodeURIComponent(
 
 export const SAMPLE_AMBIGUOUS_ID_URL = SAMPLE_ID_FRONT_URL;
 
+// Indian Aadhaar Card Front & Back Samples
+export const SAMPLE_AADHAAR_FRONT_URL = `data:image/svg+xml;utf8,${encodeURIComponent(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 856 540" width="856" height="540">
+  <defs>
+    <linearGradient id="aadhTop" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ea580c" />
+      <stop offset="100%" stop-color="#f97316" />
+    </linearGradient>
+    <linearGradient id="aadhBot" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#15803d" />
+      <stop offset="100%" stop-color="#16a34a" />
+    </linearGradient>
+  </defs>
+  <rect width="856" height="540" rx="24" fill="#ffffff" stroke="#cbd5e1" stroke-width="2" />
+  <!-- Header Bar -->
+  <rect x="0" y="0" width="856" height="60" rx="24" fill="url(#aadhTop)" />
+  <rect x="0" y="30" width="856" height="30" fill="url(#aadhTop)" />
+  <text x="35" y="40" fill="#ffffff" font-family="sans-serif" font-size="20" font-weight="bold">भारत सरकार / Government of India</text>
+  <text x="730" y="40" fill="#ffffff" font-family="sans-serif" font-size="16" font-weight="bold">UIDAI</text>
+  <!-- Photo -->
+  <rect x="40" y="90" width="200" height="250" rx="8" fill="#f1f5f9" stroke="#94a3b8" stroke-width="2" />
+  <circle cx="140" cy="180" r="50" fill="#cbd5e1" />
+  <path d="M70 320 C70 260, 210 260, 210 320 Z" fill="#64748b" />
+  <text x="140" y="325" fill="#334155" font-family="sans-serif" font-size="11" text-anchor="middle" font-weight="bold">HOLDER PHOTO</text>
+  <!-- Details -->
+  <text x="270" y="125" fill="#64748b" font-family="sans-serif" font-size="12" font-weight="bold">नाम / Name</text>
+  <text x="270" y="155" fill="#0f172a" font-family="sans-serif" font-size="22" font-weight="bold">रोहित शर्मा / Rohit Sharma</text>
+  <text x="270" y="200" fill="#64748b" font-family="sans-serif" font-size="12" font-weight="bold">जन्म तिथि / DOB</text>
+  <text x="270" y="228" fill="#0f172a" font-family="sans-serif" font-size="18" font-weight="bold">15/08/1994</text>
+  <text x="480" y="200" fill="#64748b" font-family="sans-serif" font-size="12" font-weight="bold">लिंग / Gender</text>
+  <text x="480" y="228" fill="#0f172a" font-family="sans-serif" font-size="18" font-weight="bold">पुरुष / MALE</text>
+  <!-- Emblem & Aadhaar Logo -->
+  <circle cx="760" cy="160" r="45" fill="#fff7ed" stroke="#ea580c" stroke-width="2" />
+  <text x="760" y="155" fill="#c2410c" font-family="sans-serif" font-size="12" text-anchor="middle" font-weight="bold">आधार</text>
+  <text x="760" y="175" fill="#c2410c" font-family="sans-serif" font-size="11" text-anchor="middle" font-weight="bold">AADHAAR</text>
+  <!-- Aadhaar Number -->
+  <rect x="40" y="375" width="776" height="75" rx="10" fill="#f8fafc" stroke="#e2e8f0" stroke-width="2" />
+  <text x="428" y="425" fill="#dc2626" font-family="monospace" font-size="34" font-weight="bold" text-anchor="middle" letter-spacing="8">5482 9102 3847</text>
+  <!-- Bottom Bar -->
+  <rect x="0" y="480" width="856" height="60" rx="24" fill="url(#aadhBot)" />
+  <rect x="0" y="480" width="856" height="30" fill="url(#aadhBot)" />
+  <text x="428" y="515" fill="#ffffff" font-family="sans-serif" font-size="16" font-weight="bold" text-anchor="middle">मेरा आधार, मेरी पहचान</text>
+</svg>`)}`;
+
+export const SAMPLE_AADHAAR_BACK_URL = `data:image/svg+xml;utf8,${encodeURIComponent(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 856 540" width="856" height="540">
+  <defs>
+    <linearGradient id="aadhTopB" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ea580c" />
+      <stop offset="100%" stop-color="#f97316" />
+    </linearGradient>
+    <linearGradient id="aadhBotB" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#15803d" />
+      <stop offset="100%" stop-color="#16a34a" />
+    </linearGradient>
+  </defs>
+  <rect width="856" height="540" rx="24" fill="#ffffff" stroke="#cbd5e1" stroke-width="2" />
+  <rect x="0" y="0" width="856" height="50" rx="24" fill="url(#aadhTopB)" />
+  <rect x="0" y="25" width="856" height="25" fill="url(#aadhTopB)" />
+  <text x="35" y="35" fill="#ffffff" font-family="sans-serif" font-size="16" font-weight="bold">भारतीय विशिष्ट पहचान प्राधिकरण / UIDAI</text>
+  <!-- Address Details Left -->
+  <text x="40" y="95" fill="#64748b" font-family="sans-serif" font-size="12" font-weight="bold">पता / Address:</text>
+  <text x="40" y="125" fill="#0f172a" font-family="sans-serif" font-size="14" font-weight="500">म.नं. 42, सिविल लाइन्स, एमजी रोड,</text>
+  <text x="40" y="150" fill="#0f172a" font-family="sans-serif" font-size="14" font-weight="500">नई दिल्ली - 110001</text>
+  <text x="40" y="185" fill="#0f172a" font-family="sans-serif" font-size="14" font-weight="500">H.No. 42, Civil Lines, MG Road,</text>
+  <text x="40" y="210" fill="#0f172a" font-family="sans-serif" font-size="14" font-weight="500">New Delhi - 110001</text>
+  <!-- QR Code Right -->
+  <rect x="580" y="75" width="230" height="230" rx="12" fill="#ffffff" stroke="#0f172a" stroke-width="3" />
+  <g fill="#0f172a">
+    <rect x="600" y="95" width="55" height="55" />
+    <rect x="735" y="95" width="55" height="55" />
+    <rect x="600" y="230" width="55" height="55" />
+    <rect x="670" y="160" width="40" height="40" />
+    <rect x="725" y="220" width="25" height="25" />
+    <rect x="680" y="240" width="20" height="20" />
+    <rect x="760" y="180" width="20" height="20" />
+  </g>
+  <text x="695" y="325" fill="#334155" font-family="sans-serif" font-size="11" text-anchor="middle" font-weight="bold">SECURE QR CODE</text>
+  <!-- Aadhaar Number -->
+  <rect x="40" y="365" width="776" height="75" rx="10" fill="#f8fafc" stroke="#e2e8f0" stroke-width="2" />
+  <text x="428" y="415" fill="#dc2626" font-family="monospace" font-size="34" font-weight="bold" text-anchor="middle" letter-spacing="8">5482 9102 3847</text>
+  <!-- Bottom Bar -->
+  <rect x="0" y="475" width="856" height="65" rx="24" fill="url(#aadhBotB)" />
+  <rect x="0" y="475" width="856" height="30" fill="url(#aadhBotB)" />
+  <text x="428" y="510" fill="#ffffff" font-family="sans-serif" font-size="14" font-weight="bold" text-anchor="middle">हेल्पलाइन: 1947 | www.uidai.gov.in</text>
+</svg>`)}`;
+
+// Indian PAN Card Sample
+export const SAMPLE_PAN_CARD_URL = `data:image/svg+xml;utf8,${encodeURIComponent(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 856 540" width="856" height="540">
+  <defs>
+    <linearGradient id="panBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#eff6ff" />
+      <stop offset="100%" stop-color="#dbeafe" />
+    </linearGradient>
+    <linearGradient id="panTop" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1e3a8a" />
+      <stop offset="100%" stop-color="#2563eb" />
+    </linearGradient>
+  </defs>
+  <rect width="856" height="540" rx="24" fill="url(#panBg)" stroke="#93c5fd" stroke-width="2" />
+  <!-- Top Bar -->
+  <rect x="0" y="0" width="856" height="75" rx="24" fill="url(#panTop)" />
+  <rect x="0" y="45" width="856" height="30" fill="url(#panTop)" />
+  <text x="35" y="38" fill="#ffffff" font-family="sans-serif" font-size="18" font-weight="bold">आयकर विभाग / INCOME TAX DEPARTMENT</text>
+  <text x="35" y="62" fill="#bfdbfe" font-family="sans-serif" font-size="13">भारत सरकार / GOVT. OF INDIA</text>
+  <text x="730" y="45" fill="#facc15" font-family="sans-serif" font-size="18" font-weight="bold">PAN CARD</text>
+  <!-- Photo Left -->
+  <rect x="40" y="105" width="190" height="240" rx="8" fill="#ffffff" stroke="#3b82f6" stroke-width="2" />
+  <circle cx="135" cy="190" r="48" fill="#93c5fd" />
+  <path d="M65 320 C65 260, 205 260, 205 320 Z" fill="#3b82f6" />
+  <!-- Signature -->
+  <rect x="40" y="360" width="190" height="60" rx="6" fill="#ffffff" stroke="#94a3b8" />
+  <text x="135" y="400" fill="#1e3a8a" font-family="cursive" font-size="22" font-style="italic" text-anchor="middle">R. Sharma</text>
+  <!-- Details -->
+  <text x="260" y="130" fill="#64748b" font-family="sans-serif" font-size="12" font-weight="bold">स्थायी लेखा संख्या / Permanent Account Number</text>
+  <text x="260" y="165" fill="#1e3a8a" font-family="monospace" font-size="28" font-weight="bold" letter-spacing="4">ABCDE1234F</text>
+  <text x="260" y="215" fill="#64748b" font-family="sans-serif" font-size="11" font-weight="bold">नाम / Name</text>
+  <text x="260" y="240" fill="#0f172a" font-family="sans-serif" font-size="20" font-weight="bold">ROHIT SHARMA</text>
+  <text x="260" y="285" fill="#64748b" font-family="sans-serif" font-size="11" font-weight="bold">पिता का नाम / Father's Name</text>
+  <text x="260" y="310" fill="#0f172a" font-family="sans-serif" font-size="18" font-weight="bold">SURESH SHARMA</text>
+  <text x="260" y="355" fill="#64748b" font-family="sans-serif" font-size="11" font-weight="bold">जन्म की तारीख / Date of Birth</text>
+  <text x="260" y="380" fill="#0f172a" font-family="sans-serif" font-size="18" font-weight="bold">15/08/1994</text>
+  <!-- QR Code & Hologram -->
+  <rect x="680" y="110" width="130" height="130" rx="8" fill="#ffffff" stroke="#1e3a8a" stroke-width="2" />
+  <g fill="#1e3a8a">
+    <rect x="695" y="125" width="30" height="30" />
+    <rect x="765" y="125" width="30" height="30" />
+    <rect x="695" y="195" width="30" height="30" />
+    <rect x="740" y="170" width="20" height="20" />
+  </g>
+  <circle cx="745" cy="320" r="45" fill="#fef08a" stroke="#eab308" stroke-width="2" />
+  <text x="745" y="325" fill="#854d0e" font-family="sans-serif" font-size="11" text-anchor="middle" font-weight="bold">INCOME TAX</text>
+  <!-- Footer -->
+  <rect x="0" y="475" width="856" height="65" rx="24" fill="#1e293b" />
+  <text x="428" y="515" fill="#94a3b8" font-family="sans-serif" font-size="13" text-anchor="middle">This card is issued under the authority of Income Tax Department, Govt of India</text>
+</svg>`)}`;
+
+// Indian Voter ID (EPIC) Sample
+export const SAMPLE_VOTER_ID_FRONT_URL = `data:image/svg+xml;utf8,${encodeURIComponent(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 856 540" width="856" height="540">
+  <defs>
+    <linearGradient id="voterTop" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#047857" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+  </defs>
+  <rect width="856" height="540" rx="24" fill="#ffffff" stroke="#cbd5e1" stroke-width="2" />
+  <rect x="0" y="0" width="856" height="70" rx="24" fill="url(#voterTop)" />
+  <rect x="0" y="40" width="856" height="30" fill="url(#voterTop)" />
+  <text x="35" y="42" fill="#ffffff" font-family="sans-serif" font-size="20" font-weight="bold">भारत निर्वाचन आयोग / ELECTION COMMISSION OF INDIA</text>
+  <!-- Photo Left -->
+  <rect x="40" y="100" width="200" height="250" rx="8" fill="#f8fafc" stroke="#059669" stroke-width="2" />
+  <circle cx="140" cy="190" r="50" fill="#a7f3d0" />
+  <path d="M70 330 C70 270, 210 270, 210 330 Z" fill="#059669" />
+  <!-- Details -->
+  <text x="270" y="125" fill="#64748b" font-family="sans-serif" font-size="12" font-weight="bold">ईपीआईसी संख्या / EPIC NO.</text>
+  <text x="270" y="160" fill="#047857" font-family="monospace" font-size="26" font-weight="bold" letter-spacing="3">ABC1234567</text>
+  <text x="270" y="210" fill="#64748b" font-family="sans-serif" font-size="12" font-weight="bold">मतदाता का नाम / Elector's Name</text>
+  <text x="270" y="240" fill="#0f172a" font-family="sans-serif" font-size="22" font-weight="bold">रोहित शर्मा / Rohit Sharma</text>
+  <text x="270" y="290" fill="#64748b" font-family="sans-serif" font-size="12" font-weight="bold">संबंधी का नाम / Relative's Name</text>
+  <text x="270" y="318" fill="#0f172a" font-family="sans-serif" font-size="18" font-weight="bold">सुरेश शर्मा / Suresh Sharma</text>
+  <text x="270" y="365" fill="#64748b" font-family="sans-serif" font-size="12" font-weight="bold">लिंग / Gender | आयु / Age</text>
+  <text x="270" y="392" fill="#0f172a" font-family="sans-serif" font-size="18" font-weight="bold">पुरुष / MALE | 30 Years</text>
+  <!-- Hologram Right -->
+  <circle cx="760" cy="180" r="45" fill="#fef08a" stroke="#eab308" stroke-width="2" />
+  <text x="760" y="185" fill="#854d0e" font-family="sans-serif" font-size="12" text-anchor="middle" font-weight="bold">ECI SEAL</text>
+  <!-- Footer Bar -->
+  <rect x="0" y="475" width="856" height="65" rx="24" fill="#047857" />
+  <text x="428" y="515" fill="#ffffff" font-family="sans-serif" font-size="14" font-weight="bold" text-anchor="middle">मतदाता पहचान पत्र / ELECTOR PHOTO IDENTITY CARD</text>
+</svg>`)}`;
+
+export const SAMPLE_VOTER_ID_BACK_URL = `data:image/svg+xml;utf8,${encodeURIComponent(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 856 540" width="856" height="540">
+  <defs>
+    <linearGradient id="voterTopB" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#047857" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+  </defs>
+  <rect width="856" height="540" rx="24" fill="#ffffff" stroke="#cbd5e1" stroke-width="2" />
+  <rect x="0" y="0" width="856" height="50" rx="24" fill="url(#voterTopB)" />
+  <rect x="0" y="25" width="856" height="25" fill="url(#voterTopB)" />
+  <text x="35" y="35" fill="#ffffff" font-family="sans-serif" font-size="16" font-weight="bold">ELECTION COMMISSION OF INDIA</text>
+  <!-- Address -->
+  <text x="40" y="90" fill="#64748b" font-family="sans-serif" font-size="12" font-weight="bold">पता / Address:</text>
+  <text x="40" y="120" fill="#0f172a" font-family="sans-serif" font-size="15">म.नं. 42, सिविल लाइन्स, एमजी रोड, नई दिल्ली - 110001</text>
+  <text x="40" y="150" fill="#0f172a" font-family="sans-serif" font-size="15">H.No. 42, Civil Lines, MG Road, New Delhi - 110001</text>
+  <!-- Polling details -->
+  <text x="40" y="210" fill="#64748b" font-family="sans-serif" font-size="12" font-weight="bold">विधानसभा निर्वाचन क्षेत्र / Assembly Constituency:</text>
+  <text x="40" y="235" fill="#0f172a" font-family="sans-serif" font-size="16" font-weight="bold">04 - New Delhi</text>
+  <text x="40" y="280" fill="#64748b" font-family="sans-serif" font-size="12" font-weight="bold">भाग संख्या और नाम / Part No &amp; Name:</text>
+  <text x="40" y="305" fill="#0f172a" font-family="sans-serif" font-size="15">12 - Govt Boys Senior Sec School</text>
+  <!-- Signature of Officer -->
+  <rect x="560" y="250" width="250" height="80" rx="8" fill="#f8fafc" stroke="#94a3b8" />
+  <text x="685" y="295" fill="#0f172a" font-family="cursive" font-size="20" font-style="italic" text-anchor="middle">Electoral Officer</text>
+  <text x="685" y="320" fill="#64748b" font-family="sans-serif" font-size="10" text-anchor="middle" font-weight="bold">ELECTORAL REGISTRATION OFFICER</text>
+  <!-- Barcode -->
+  <rect x="40" y="360" width="776" height="80" rx="8" fill="#f8fafc" stroke="#e2e8f0" />
+  <text x="428" y="415" fill="#0f172a" font-family="monospace" font-size="24" font-weight="bold" text-anchor="middle" letter-spacing="6">||||| | |||| |||||| || |||||| | ||</text>
+  <!-- Footer -->
+  <rect x="0" y="475" width="856" height="65" rx="24" fill="#047857" />
+  <text x="428" y="515" fill="#ffffff" font-family="sans-serif" font-size="14" font-weight="bold" text-anchor="middle">www.eci.gov.in | Voter Helpline: 1950</text>
+</svg>`)}`;
+
+
