@@ -26,6 +26,24 @@ export interface PaperSizeConfig {
   description: string;
 }
 
+export interface PersonPhotoItem {
+  id: string;
+  name: string; // e.g. "Person 1", "John", "Family Member 1"
+  rawImage: string; // dataUrl or image URL
+  processedPhotoUrl?: string;
+  cropBox?: { x: number; y: number; width: number; height: number };
+  quadCorners?: QuadCorners;
+  copies: number; // Copies on the sheet
+  rotation: number;
+  brightness: number;
+  contrast: number;
+  saturation: number;
+  sharpness: number;
+  backgroundColor: string; // '#ffffff', '#dbeafe', 'original', etc.
+}
+
+export type PrintSizeCategory = 'passport' | 'full_a4' | '4x6' | 'custom';
+
 export interface PassportPreset {
   id: string;
   country: string;

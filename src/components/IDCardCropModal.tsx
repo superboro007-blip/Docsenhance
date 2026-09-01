@@ -65,12 +65,43 @@ export const IDCardCropModal: React.FC<IDCardCropModalProps> = ({
   const [engineMode, setEngineMode] = useState<CropEngineMode>('box');
   const [isFreeform, setIsFreeform] = useState(false);
   const [statusNotification, setStatusNotification] = useState<string | null>(null);
+  const [imageAspect, setImageAspect] = useState<number>(1.0);
+
+  // Calculate default standard size crop box intelligently based on image natural aspect ratio
+  const getStandardCropBox = useCallback((customImgAspect?: number) => {
+    const imgRatio = customImgAspect || imageAspect || 1.0;
+    const targetRatio = presetAspectRatio; // physical target aspect ratio (e.g. 1.585)
+    // In percentage coordinates: (w_pct / h_pct) * imgRatio = targetRatio => w_pct / h_pct = targetRatio / imgRatio
+    const rPct = targetRatio / imgRatio;
+
+    let width = 86;
+    let height = width / rPct;
+
+    if (height > 90) {
+      height = 85;
+      width = height * rPct;
+    }
+    if (width > 92) {
+      width = 90;
+      height = width / rPct;
+    }
+
+    width = Math.max(10, Math.min(96, width));
+    height = Math.max(10, Math.min(96, height));
+
+    return {
+      x: Math.max(0, (100 - width) / 2),
+      y: Math.max(0, (100 - height) / 2),
+      width,
+      height,
+    };
+  }, [imageAspect, presetAspectRatio]);
 
   const [cropBox, setCropBox] = useState<{ x: number; y: number; width: number; height: number }>({
     x: 5,
-    y: 5,
-    width: 90,
-    height: 90 / presetAspectRatio,
+    y: 15,
+    width: 86,
+    height: 54,
   });
 
   const [corners, setCorners] = useState<QuadCorners>({
@@ -90,25 +121,20 @@ export const IDCardCropModal: React.FC<IDCardCropModalProps> = ({
     height: 0,
   });
 
-  // Calculate default standard size crop box
-  const getStandardCropBox = useCallback(() => {
-    const defaultW = 86;
-    const defaultH = defaultW / presetAspectRatio;
-    return {
-      x: (100 - defaultW) / 2,
-      y: Math.max(3, (100 - Math.min(94, defaultH)) / 2),
-      width: defaultW,
-      height: Math.min(94, defaultH),
-    };
-  }, [presetAspectRatio]);
-
-  // Load and cache source image for real-time live preview
+  // Load and cache source image for real-time live preview & aspect ratio extraction
   useEffect(() => {
     if (!imageSrc) return;
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
       sourceImageRef.current = img;
+      if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+        const aspect = img.naturalWidth / img.naturalHeight;
+        setImageAspect(aspect);
+        if (!initialCropBox) {
+          setCropBox(getStandardCropBox(aspect));
+        }
+      }
       renderLivePreview();
     };
     img.src = imageSrc;
@@ -214,12 +240,17 @@ export const IDCardCropModal: React.FC<IDCardCropModalProps> = ({
 
   const zoomCrop = (scaleFactor: number) => {
     setCropBox((prev) => {
-      let newW = Math.max(15, Math.min(100, prev.width * scaleFactor));
-      let newH = currentRatio ? newW / currentRatio : Math.max(15, Math.min(100, prev.height * scaleFactor));
+      const rPct = currentRatio ? currentRatio / imageAspect : null;
+      let newW = Math.max(10, Math.min(100, prev.width * scaleFactor));
+      let newH = rPct ? newW / rPct : Math.max(10, Math.min(100, prev.height * scaleFactor));
 
-      if (newH > 100 && currentRatio) {
+      if (rPct && newH > 100) {
         newH = 100;
-        newW = newH * currentRatio;
+        newW = newH * rPct;
+      }
+      if (rPct && newW > 100) {
+        newW = 100;
+        newH = newW / rPct;
       }
 
       const centerX = prev.x + prev.width / 2;
@@ -237,15 +268,20 @@ export const IDCardCropModal: React.FC<IDCardCropModalProps> = ({
 
   const maximizeCrop = () => {
     if (currentRatio) {
+      const rPct = currentRatio / imageAspect;
       let w = 100;
-      let h = w / currentRatio;
+      let h = w / rPct;
       if (h > 100) {
         h = 100;
-        w = h * currentRatio;
+        w = h * rPct;
+      }
+      if (w > 100) {
+        w = 100;
+        h = w / rPct;
       }
       setCropBox({
-        x: (100 - w) / 2,
-        y: (100 - h) / 2,
+        x: Math.max(0, (100 - w) / 2),
+        y: Math.max(0, (100 - h) / 2),
         width: w,
         height: h,
       });
@@ -287,42 +323,66 @@ export const IDCardCropModal: React.FC<IDCardCropModalProps> = ({
 
         setCropBox((prev) => ({ ...prev, x: newX, y: newY }));
       } else if (currentRatio) {
-        // Locked aspect ratio
+        // Locked aspect ratio for standard ID card
+        const rPct = currentRatio / imageAspect;
         if (dragHandle === 'br' || dragHandle === 'se' || dragHandle === 'e' || dragHandle === 's') {
-          let newWidth = Math.max(20, Math.min(100 - cropStart.x, cropStart.width + deltaXPct));
-          let newHeight = newWidth / currentRatio;
+          let newWidth = Math.max(10, Math.min(100 - cropStart.x, cropStart.width + deltaXPct));
+          let newHeight = newWidth / rPct;
 
           if (cropStart.y + newHeight > 100) {
             newHeight = 100 - cropStart.y;
-            newWidth = newHeight * currentRatio;
+            newWidth = newHeight * rPct;
           }
 
           setCropBox((prev) => ({ ...prev, width: newWidth, height: newHeight }));
         } else if (dragHandle === 'tl' || dragHandle === 'nw') {
-          let newWidth = Math.max(20, cropStart.width - deltaXPct);
-          let newHeight = newWidth / currentRatio;
+          let newWidth = Math.max(10, cropStart.width - deltaXPct);
+          let newHeight = newWidth / rPct;
           let newX = cropStart.x + (cropStart.width - newWidth);
           let newY = cropStart.y + (cropStart.height - newHeight);
 
-          if (newX >= 0 && newY >= 0) {
-            setCropBox({ x: newX, y: newY, width: newWidth, height: newHeight });
+          if (newX < 0) {
+            newX = 0;
+            newWidth = cropStart.x + cropStart.width;
+            newHeight = newWidth / rPct;
+            newY = cropStart.y + (cropStart.height - newHeight);
           }
+          if (newY < 0) {
+            newY = 0;
+            newHeight = cropStart.y + cropStart.height;
+            newWidth = newHeight * rPct;
+            newX = cropStart.x + (cropStart.width - newWidth);
+          }
+
+          setCropBox({ x: Math.max(0, newX), y: Math.max(0, newY), width: newWidth, height: newHeight });
         } else if (dragHandle === 'tr' || dragHandle === 'ne') {
-          let newWidth = Math.max(20, Math.min(100 - cropStart.x, cropStart.width + deltaXPct));
-          let newHeight = newWidth / currentRatio;
+          let newWidth = Math.max(10, Math.min(100 - cropStart.x, cropStart.width + deltaXPct));
+          let newHeight = newWidth / rPct;
           let newY = cropStart.y + (cropStart.height - newHeight);
 
-          if (newY >= 0) {
-            setCropBox((prev) => ({ ...prev, width: newWidth, height: newHeight, y: newY }));
+          if (newY < 0) {
+            newY = 0;
+            newHeight = cropStart.y + cropStart.height;
+            newWidth = newHeight * rPct;
           }
+
+          setCropBox((prev) => ({ ...prev, width: newWidth, height: newHeight, y: Math.max(0, newY) }));
         } else if (dragHandle === 'bl' || dragHandle === 'sw') {
-          let newWidth = Math.max(20, cropStart.width - deltaXPct);
-          let newHeight = newWidth / currentRatio;
+          let newWidth = Math.max(10, cropStart.width - deltaXPct);
+          let newHeight = newWidth / rPct;
           let newX = cropStart.x + (cropStart.width - newWidth);
 
-          if (newX >= 0 && cropStart.y + newHeight <= 100) {
-            setCropBox({ x: newX, y: cropStart.y, width: newWidth, height: newHeight });
+          if (cropStart.y + newHeight > 100) {
+            newHeight = 100 - cropStart.y;
+            newWidth = newHeight * rPct;
           }
+          if (newX < 0) {
+            newX = 0;
+            newWidth = cropStart.x + cropStart.width;
+            newHeight = newWidth / rPct;
+          }
+
+          setCropBox((prev) => ({ ...prev, x: Math.max(0, newX), width: newWidth, height: newHeight }));
         }
       } else {
         // Freeform
@@ -353,7 +413,7 @@ export const IDCardCropModal: React.FC<IDCardCropModalProps> = ({
         setCropBox({ x, y, width: w, height: h });
       }
     },
-    [isDragging, dragHandle, dragStart, cropStart, currentRatio]
+    [isDragging, dragHandle, dragStart, cropStart, currentRatio, imageAspect]
   );
 
   const handleMouseUp = useCallback(() => {

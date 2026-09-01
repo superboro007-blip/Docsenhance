@@ -611,10 +611,8 @@ export async function renderPassportSheetCanvas(
 
   // Determine optimal column arrangement based on count requested
   let cols = maxCols;
-  if (countToDraw === 6) {
-    // When 6 photos are selected, arrange all 6 photos in ONE single row!
-    cols = 6;
-  } else if (paper.id === 'a4' && countToDraw >= 36) {
+  if (maxCols >= 6 && (countToDraw === 6 || countToDraw === 12 || countToDraw === 18 || countToDraw === 24 || countToDraw === 30 || countToDraw === 36 || countToDraw % 6 === 0 || countToDraw > 16)) {
+    // When 6, 12, 18, 24, 30, 36 photos are chosen, fit them horizontally with 6 photos per row (e.g. 6x1, 6x2, 6x3, 6x4, 6x5, 6x6)
     cols = 6;
   } else if (paper.id === '4x6') {
     cols = Math.min(maxCols, countToDraw <= 2 ? countToDraw : (countToDraw <= 4 ? 2 : 4));
@@ -625,7 +623,7 @@ export async function renderPassportSheetCanvas(
   } else if (countToDraw <= 8) {
     cols = Math.min(maxCols, 4);
   } else if (countToDraw <= 16) {
-    cols = Math.min(maxCols, 4);
+    cols = Math.min(maxCols, maxCols >= 6 ? 6 : 4);
   } else {
     cols = maxCols;
   }
@@ -690,6 +688,149 @@ export async function renderPassportSheetCanvas(
   }
 
   // No hardcoded headers/footers in print output as requested by user
+  return canvas;
+}
+
+export interface RenderPersonItem {
+  id?: string;
+  name: string;
+  photoUrl: string;
+  copies: number;
+}
+
+/**
+ * Generate full sheet with multiple persons and individual copy counts
+ */
+export async function renderMultiPersonSheetCanvas(
+  personItems: RenderPersonItem[],
+  paper: PaperSizeConfig,
+  settings: PassportSettings,
+  photoWidthMm: number,
+  photoHeightMm: number
+): Promise<HTMLCanvasElement> {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas context failed');
+
+  const sheetWidthPx = mmToPixels(paper.widthMm, 300);
+  const sheetHeightPx = mmToPixels(paper.heightMm, 300);
+
+  canvas.width = sheetWidthPx;
+  canvas.height = sheetHeightPx;
+
+  // Fill clear white background
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, sheetWidthPx, sheetHeightPx);
+
+  const photoWidthPx = mmToPixels(photoWidthMm, 300);
+  const photoHeightPx = mmToPixels(photoHeightMm, 300);
+  const gapPx = mmToPixels(settings.gapMm ?? 2, 300);
+
+  // Compute maximum columns and rows that can physically fit on the paper
+  const maxCols = Math.max(1, Math.floor((paper.widthMm - 6 + settings.gapMm) / (photoWidthMm + settings.gapMm)));
+  const maxRows = Math.max(1, Math.floor((paper.heightMm - 6 + settings.gapMm) / (photoHeightMm + settings.gapMm)));
+  const maxCapacity = maxCols * maxRows;
+
+  // Pre-load all person images
+  const loadedMap = new Map<string, HTMLImageElement>();
+  for (const item of personItems) {
+    if (!loadedMap.has(item.photoUrl)) {
+      try {
+        const img = await loadImage(item.photoUrl);
+        loadedMap.set(item.photoUrl, img);
+      } catch (err) {
+        console.warn('Could not load image for person:', item.name, err);
+      }
+    }
+  }
+
+  // Build the list of images to render in sequence
+  const queue: { img: HTMLImageElement; name: string }[] = [];
+  for (const item of personItems) {
+    const img = loadedMap.get(item.photoUrl);
+    if (!img) continue;
+    const copies = Math.max(1, item.copies || 1);
+    for (let i = 0; i < copies; i++) {
+      queue.push({ img, name: item.name });
+    }
+  }
+
+  const countToDraw = Math.min(queue.length, maxCapacity);
+  if (countToDraw === 0) return canvas;
+
+  // Determine optimal columns
+  let cols = maxCols;
+  if (maxCols >= 6 && (countToDraw === 6 || countToDraw === 12 || countToDraw === 18 || countToDraw === 24 || countToDraw === 30 || countToDraw === 36 || countToDraw % 6 === 0 || countToDraw > 16)) {
+    // When 6, 12, 18, 24, 30, 36 photos are chosen, fit them horizontally with 6 photos per row (e.g. 6x1, 6x2, 6x3, 6x4, 6x5, 6x6)
+    cols = 6;
+  } else if (paper.id === '4x6') {
+    cols = Math.min(maxCols, countToDraw <= 2 ? countToDraw : (countToDraw <= 4 ? 2 : 4));
+  } else if (countToDraw <= 2) {
+    cols = countToDraw;
+  } else if (countToDraw <= 4) {
+    cols = Math.min(maxCols, 2);
+  } else if (countToDraw <= 8) {
+    cols = Math.min(maxCols, 4);
+  } else if (countToDraw <= 16) {
+    cols = Math.min(maxCols, maxCols >= 6 ? 6 : 4);
+  } else {
+    cols = maxCols;
+  }
+
+  const rows = Math.ceil(countToDraw / cols);
+  const activeColsInFullRows = countToDraw >= cols ? cols : countToDraw;
+
+  // Center the grid on the sheet or use custom margins
+  const totalGridWidthPx = activeColsInFullRows * photoWidthPx + (activeColsInFullRows - 1) * gapPx;
+  const totalGridHeightPx = rows * photoHeightPx + (rows - 1) * gapPx;
+
+  const startXPx = settings.marginLeftMm > 0
+    ? mmToPixels(settings.marginLeftMm, 300)
+    : Math.max(0, (sheetWidthPx - totalGridWidthPx) / 2);
+
+  const startYPx = settings.marginTopMm > 0
+    ? mmToPixels(settings.marginTopMm, 300)
+    : Math.max(0, (sheetHeightPx - totalGridHeightPx) / 2);
+
+  let drawnCount = 0;
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (drawnCount >= countToDraw) break;
+
+      const item = queue[drawnCount];
+      const x = startXPx + c * (photoWidthPx + gapPx);
+      const y = startYPx + r * (photoHeightPx + gapPx);
+
+      // Draw photo
+      ctx.drawImage(item.img, x, y, photoWidthPx, photoHeightPx);
+
+      // Draw cutting lines if enabled
+      if (settings.showCutLines) {
+        ctx.strokeStyle = '#9ca3af';
+        ctx.lineWidth = 1;
+
+        if (settings.cutLineStyle === 'dashed') {
+          ctx.setLineDash([6, 6]);
+          ctx.strokeRect(x, y, photoWidthPx, photoHeightPx);
+          ctx.setLineDash([]);
+        } else if (settings.cutLineStyle === 'cross_corners') {
+          const markLen = mmToPixels(2.5, 300);
+          ctx.beginPath();
+          ctx.moveTo(x - markLen, y); ctx.lineTo(x, y); ctx.lineTo(x, y - markLen);
+          ctx.moveTo(x + photoWidthPx + markLen, y); ctx.lineTo(x + photoWidthPx, y); ctx.lineTo(x + photoWidthPx, y - markLen);
+          ctx.moveTo(x - markLen, y + photoHeightPx); ctx.lineTo(x, y + photoHeightPx); ctx.lineTo(x, y + photoHeightPx + markLen);
+          ctx.moveTo(x + photoWidthPx + markLen, y + photoHeightPx); ctx.lineTo(x + photoWidthPx, y + photoHeightPx); ctx.lineTo(x + photoWidthPx, y + photoHeightPx + markLen);
+          ctx.stroke();
+        } else {
+          ctx.strokeRect(x, y, photoWidthPx, photoHeightPx);
+        }
+      }
+
+      drawnCount++;
+    }
+  }
+
   return canvas;
 }
 

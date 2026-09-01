@@ -93,9 +93,61 @@ export const DocumentCropModal: React.FC<DocumentCropModalProps> = ({
 
   const [isAiDetecting, setIsAiDetecting] = useState(false);
   const [aiNote, setAiNote] = useState<string | null>(null);
+  const [imageAspect, setImageAspect] = useState<number>(1.0);
 
   const activePreset = DOCUMENT_RATIO_PRESETS.find((p) => p.id === selectedPresetId) || DOCUMENT_RATIO_PRESETS[0];
   const targetRatio = activePreset.ratio;
+
+  // Calculate default standard size crop box intelligently based on natural image aspect ratio
+  const getStandardDocCropBox = useCallback((customImgAspect?: number, customRatio?: number | null) => {
+    const imgRatio = customImgAspect || imageAspect || 1.0;
+    const rTarget = customRatio !== undefined ? customRatio : (targetRatio || null);
+
+    if (!rTarget) {
+      // Freeform standard: 4% margin around document (92% width, 92% height)
+      return { x: 4, y: 4, width: 92, height: 92 };
+    }
+
+    const rPct = rTarget / imgRatio;
+    let width = 88;
+    let height = width / rPct;
+
+    if (height > 92) {
+      height = 88;
+      width = height * rPct;
+    }
+    if (width > 94) {
+      width = 92;
+      height = width / rPct;
+    }
+
+    width = Math.max(10, Math.min(96, width));
+    height = Math.max(10, Math.min(96, height));
+
+    return {
+      x: Math.max(0, (100 - width) / 2),
+      y: Math.max(0, (100 - height) / 2),
+      width,
+      height,
+    };
+  }, [imageAspect, targetRatio]);
+
+  // Load and cache source image aspect ratio
+  useEffect(() => {
+    if (!imageSrc) return;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+        const aspect = img.naturalWidth / img.naturalHeight;
+        setImageAspect(aspect);
+        if (!initialCropBox) {
+          setCropBox(getStandardDocCropBox(aspect));
+        }
+      }
+    };
+    img.src = imageSrc;
+  }, [imageSrc]);
 
   // Initialize or reset crop box and corners when modal opens
   useEffect(() => {
@@ -103,12 +155,7 @@ export const DocumentCropModal: React.FC<DocumentCropModalProps> = ({
     if (initialCropBox) {
       setCropBox(initialCropBox);
     } else {
-      setCropBox({
-        x: 4,
-        y: 4,
-        width: 92,
-        height: 92,
-      });
+      setCropBox(getStandardDocCropBox());
     }
 
     if (initialCorners) {
@@ -123,27 +170,36 @@ export const DocumentCropModal: React.FC<DocumentCropModalProps> = ({
     }
 
     setRotation(initialRotation || 0);
-  }, [isOpen, initialCropBox, initialCorners, initialRotation]);
+  }, [isOpen, initialCropBox, initialCorners, initialRotation, getStandardDocCropBox]);
 
   // Adjust crop box when ratio preset changes
   const handleSelectPreset = (presetId: string) => {
     setSelectedPresetId(presetId);
     const preset = DOCUMENT_RATIO_PRESETS.find((p) => p.id === presetId);
-    if (!preset || !preset.ratio) return;
+    if (!preset) return;
 
-    const r = preset.ratio;
+    if (!preset.ratio) {
+      // Freeform standard: 4% margin around document
+      setCropBox({ x: 4, y: 4, width: 92, height: 92 });
+      return;
+    }
+
+    const rPct = preset.ratio / imageAspect;
     setCropBox((prev) => {
       let newW = prev.width;
-      let newH = newW / r;
+      let newH = newW / rPct;
 
-      if (newH > 96) {
-        newH = 92;
-        newW = newH * r;
+      if (newH > 94) {
+        newH = 90;
+        newW = newH * rPct;
       }
-      if (newW > 96) {
-        newW = 92;
-        newH = newW / r;
+      if (newW > 94) {
+        newW = 90;
+        newH = newW / rPct;
       }
+
+      newW = Math.max(10, Math.min(96, newW));
+      newH = Math.max(10, Math.min(96, newH));
 
       const centerX = prev.x + prev.width / 2;
       const centerY = prev.y + prev.height / 2;
@@ -156,6 +212,14 @@ export const DocumentCropModal: React.FC<DocumentCropModalProps> = ({
 
       return { x: newX, y: newY, width: newW, height: newH };
     });
+  };
+
+  // Reset to standard document size
+  const handleResetToStandardSize = () => {
+    const stdBox = getStandardDocCropBox();
+    setCropBox(stdBox);
+    setAiNote(`✓ Reset to Standard ${activePreset.name} Box`);
+    setTimeout(() => setAiNote(null), 3000);
   };
 
   // AI Auto-detect Document Boundary & Crop Box
@@ -230,12 +294,17 @@ export const DocumentCropModal: React.FC<DocumentCropModalProps> = ({
 
   const zoomCrop = (scaleFactor: number) => {
     setCropBox((prev) => {
-      let newW = Math.max(15, Math.min(100, prev.width * scaleFactor));
-      let newH = targetRatio ? newW / targetRatio : Math.max(15, Math.min(100, prev.height * scaleFactor));
+      const rPct = targetRatio ? targetRatio / imageAspect : null;
+      let newW = Math.max(10, Math.min(100, prev.width * scaleFactor));
+      let newH = rPct ? newW / rPct : Math.max(10, Math.min(100, prev.height * scaleFactor));
 
-      if (newH > 100 && targetRatio) {
+      if (rPct && newH > 100) {
         newH = 100;
-        newW = newH * targetRatio;
+        newW = newH * rPct;
+      }
+      if (rPct && newW > 100) {
+        newW = 100;
+        newH = newW / rPct;
       }
 
       const centerX = prev.x + prev.width / 2;
@@ -253,15 +322,20 @@ export const DocumentCropModal: React.FC<DocumentCropModalProps> = ({
 
   const maximizeCrop = () => {
     if (targetRatio) {
+      const rPct = targetRatio / imageAspect;
       let w = 100;
-      let h = w / targetRatio;
+      let h = w / rPct;
       if (h > 100) {
         h = 100;
-        w = h * targetRatio;
+        w = h * rPct;
+      }
+      if (w > 100) {
+        w = 100;
+        h = w / rPct;
       }
       setCropBox({
-        x: (100 - w) / 2,
-        y: (100 - h) / 2,
+        x: Math.max(0, (100 - w) / 2),
+        y: Math.max(0, (100 - h) / 2),
         width: w,
         height: h,
       });
@@ -309,42 +383,66 @@ export const DocumentCropModal: React.FC<DocumentCropModalProps> = ({
 
         setCropBox((prev) => ({ ...prev, x: newX, y: newY }));
       } else if (targetRatio) {
-        // Locked aspect ratio
+        // Locked aspect ratio for document preset
+        const rPct = targetRatio / imageAspect;
         if (dragHandle === 'br' || dragHandle === 'se' || dragHandle === 'e' || dragHandle === 's') {
-          let newWidth = Math.max(15, Math.min(100 - cropStart.x, cropStart.width + deltaXPct));
-          let newHeight = newWidth / targetRatio;
+          let newWidth = Math.max(10, Math.min(100 - cropStart.x, cropStart.width + deltaXPct));
+          let newHeight = newWidth / rPct;
 
           if (cropStart.y + newHeight > 100) {
             newHeight = 100 - cropStart.y;
-            newWidth = newHeight * targetRatio;
+            newWidth = newHeight * rPct;
           }
 
           setCropBox((prev) => ({ ...prev, width: newWidth, height: newHeight }));
         } else if (dragHandle === 'tl' || dragHandle === 'nw') {
-          let newWidth = Math.max(15, cropStart.width - deltaXPct);
-          let newHeight = newWidth / targetRatio;
+          let newWidth = Math.max(10, cropStart.width - deltaXPct);
+          let newHeight = newWidth / rPct;
           let newX = cropStart.x + (cropStart.width - newWidth);
           let newY = cropStart.y + (cropStart.height - newHeight);
 
-          if (newX >= 0 && newY >= 0) {
-            setCropBox({ x: newX, y: newY, width: newWidth, height: newHeight });
+          if (newX < 0) {
+            newX = 0;
+            newWidth = cropStart.x + cropStart.width;
+            newHeight = newWidth / rPct;
+            newY = cropStart.y + (cropStart.height - newHeight);
           }
+          if (newY < 0) {
+            newY = 0;
+            newHeight = cropStart.y + cropStart.height;
+            newWidth = newHeight * rPct;
+            newX = cropStart.x + (cropStart.width - newWidth);
+          }
+
+          setCropBox({ x: Math.max(0, newX), y: Math.max(0, newY), width: newWidth, height: newHeight });
         } else if (dragHandle === 'tr' || dragHandle === 'ne') {
-          let newWidth = Math.max(15, Math.min(100 - cropStart.x, cropStart.width + deltaXPct));
-          let newHeight = newWidth / targetRatio;
+          let newWidth = Math.max(10, Math.min(100 - cropStart.x, cropStart.width + deltaXPct));
+          let newHeight = newWidth / rPct;
           let newY = cropStart.y + (cropStart.height - newHeight);
 
-          if (newY >= 0) {
-            setCropBox((prev) => ({ ...prev, width: newWidth, height: newHeight, y: newY }));
+          if (newY < 0) {
+            newY = 0;
+            newHeight = cropStart.y + cropStart.height;
+            newWidth = newHeight * rPct;
           }
+
+          setCropBox((prev) => ({ ...prev, width: newWidth, height: newHeight, y: Math.max(0, newY) }));
         } else if (dragHandle === 'bl' || dragHandle === 'sw') {
-          let newWidth = Math.max(15, cropStart.width - deltaXPct);
-          let newHeight = newWidth / targetRatio;
+          let newWidth = Math.max(10, cropStart.width - deltaXPct);
+          let newHeight = newWidth / rPct;
           let newX = cropStart.x + (cropStart.width - newWidth);
 
-          if (newX >= 0 && cropStart.y + newHeight <= 100) {
-            setCropBox({ x: newX, y: cropStart.y, width: newWidth, height: newHeight });
+          if (cropStart.y + newHeight > 100) {
+            newHeight = 100 - cropStart.y;
+            newWidth = newHeight * rPct;
           }
+          if (newX < 0) {
+            newX = 0;
+            newWidth = cropStart.x + cropStart.width;
+            newHeight = newWidth / rPct;
+          }
+
+          setCropBox((prev) => ({ ...prev, x: Math.max(0, newX), width: newWidth, height: newHeight }));
         }
       } else {
         // Freeform
@@ -375,7 +473,7 @@ export const DocumentCropModal: React.FC<DocumentCropModalProps> = ({
         setCropBox({ x, y, width: w, height: h });
       }
     },
-    [isDragging, dragHandle, dragStart, cropStart, targetRatio]
+    [isDragging, dragHandle, dragStart, cropStart, targetRatio, imageAspect]
   );
 
   const handleMouseUp = useCallback(() => {
@@ -731,12 +829,21 @@ export const DocumentCropModal: React.FC<DocumentCropModalProps> = ({
                   <ZoomOut className="w-3.5 h-3.5 text-pink-400" /> Zoom Out
                 </button>
               </div>
-              <button
-                onClick={maximizeCrop}
-                className="w-full py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 flex items-center justify-center gap-1.5 mt-1"
-              >
-                <Maximize2 className="w-3.5 h-3.5 text-purple-400" /> Fit Full Page Scan
-              </button>
+              <div className="grid grid-cols-2 gap-2 mt-1">
+                <button
+                  onClick={handleResetToStandardSize}
+                  className="py-1.5 rounded-lg bg-purple-950/50 hover:bg-purple-900/50 border border-purple-800/40 text-xs font-semibold text-purple-300 flex items-center justify-center gap-1.5"
+                  title="Reset to standard document proportions"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-purple-400" /> Standard Size
+                </button>
+                <button
+                  onClick={maximizeCrop}
+                  className="py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 flex items-center justify-center gap-1.5"
+                >
+                  <Maximize2 className="w-3.5 h-3.5 text-purple-400" /> Fit Full Scan
+                </button>
+              </div>
             </div>
 
             {/* Quick Presets Info */}
