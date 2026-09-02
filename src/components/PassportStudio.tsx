@@ -5,10 +5,13 @@ import {
   PaperSizeConfig,
   PersonPhotoItem,
   PrintSizeCategory,
+  PaperTypeId,
 } from '../types';
 import {
   PASSPORT_PRESETS,
   PAPER_SIZES,
+  PAPER_TYPES,
+  PHOTO_LIGHTING_PRESETS,
   SAMPLE_PORTRAIT_URL,
 } from '../data/presets';
 import {
@@ -43,6 +46,14 @@ import {
   Split,
   Layers,
   Grid,
+  Sun,
+  Contrast,
+  Sliders,
+  Palette,
+  CheckCircle2,
+  Info,
+  FileText,
+  Zap,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -89,6 +100,7 @@ export const PassportStudio: React.FC<PassportStudioProps> = () => {
     marginTopMm: 6,
     marginLeftMm: 6,
     backgroundColor: '#ffffff',
+    paperTypeId: 'photo_glossy',
     showCutLines: true,
     cutLineStyle: 'solid',
     showFaceGuideOverlay: false,
@@ -98,6 +110,31 @@ export const PassportStudio: React.FC<PassportStudioProps> = () => {
     sharpness: 0,
     skinSmooth: 0,
   });
+
+  // Current selected paper type configuration
+  const currentPaperType =
+    PAPER_TYPES.find((pt) => pt.id === settings.paperTypeId) || PAPER_TYPES[0];
+
+  // Helper to apply lighting adjustments to active person
+  const handleLightingPresetApply = (preset: typeof PHOTO_LIGHTING_PRESETS[0]) => {
+    updateActivePerson({
+      brightness: preset.brightness,
+      contrast: preset.contrast,
+      saturation: preset.saturation,
+    });
+  };
+
+  // Helper to apply current active person's lighting to all people
+  const handleApplyLightingToAll = () => {
+    setPersons((prev) =>
+      prev.map((p) => ({
+        ...p,
+        brightness: activePerson.brightness || 0,
+        contrast: activePerson.contrast || 0,
+        saturation: activePerson.saturation || 0,
+      }))
+    );
+  };
 
   // Modal states
   const [isCropModalOpen, setIsCropModalOpen] = useState(false);
@@ -476,7 +513,7 @@ export const PassportStudio: React.FC<PassportStudioProps> = () => {
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Print Photo Sheet - ${selectedPaper.name}</title>
+          <title>Print Photo Sheet - ${selectedPaper.name} (${currentPaperType.name} - ${currentPaperType.weightGsm})</title>
           <style>
             @page {
               size: ${selectedPaper.widthMm}mm ${selectedPaper.heightMm}mm;
@@ -957,6 +994,216 @@ export const PassportStudio: React.FC<PassportStudioProps> = () => {
                 </div>
               )}
             </div>
+
+            {/* Photo Brightness & Contrast Selection Card */}
+            <div className="p-4 bg-black/40 rounded-xl border border-white/10 space-y-3.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
+                  <Sun className="w-4 h-4 text-amber-400" />
+                  Photo Brightness & Contrast Selection
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono">
+                  Active: <strong className="text-blue-300">{activePerson.name}</strong>
+                </span>
+              </div>
+
+              {/* 1-Click Lighting Presets */}
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-300 mb-1.5">
+                  1-Click Lighting Presets:
+                </label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {PHOTO_LIGHTING_PRESETS.map((preset) => {
+                    const isPresetActive =
+                      (activePerson.brightness || 0) === preset.brightness &&
+                      (activePerson.contrast || 0) === preset.contrast &&
+                      (activePerson.saturation || 0) === preset.saturation;
+
+                    return (
+                      <button
+                        key={preset.id}
+                        onClick={() => handleLightingPresetApply(preset)}
+                        className={`p-1.5 text-left rounded-lg text-[11px] transition-all border ${
+                          isPresetActive
+                            ? 'bg-blue-600/30 border-blue-400 text-white font-bold ring-1 ring-blue-400/40'
+                            : 'bg-black/30 border-white/10 text-slate-300 hover:text-white hover:bg-white/10'
+                        }`}
+                        title={preset.description}
+                      >
+                        <div className="truncate font-semibold">{preset.name}</div>
+                        <div className="text-[9px] text-slate-400 font-mono mt-0.5">
+                          {preset.brightness > 0 ? `+${preset.brightness}` : preset.brightness}B /{' '}
+                          {preset.contrast > 0 ? `+${preset.contrast}` : preset.contrast}C
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Brightness Slider */}
+              <div className="space-y-1.5 bg-black/20 p-2.5 rounded-lg border border-white/5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-slate-300 flex items-center gap-1.5">
+                    <Sun className="w-3.5 h-3.5 text-amber-400" />
+                    Brightness
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() =>
+                        updateActivePerson({
+                          brightness: Math.max(-50, (activePerson.brightness || 0) - 5),
+                        })
+                      }
+                      className="w-5 h-5 rounded bg-white/10 hover:bg-white/20 text-slate-200 text-xs flex items-center justify-center font-bold"
+                      title="Decrease brightness"
+                    >
+                      -
+                    </button>
+                    <span className="text-xs font-mono font-bold text-amber-300 w-10 text-center">
+                      {(activePerson.brightness || 0) > 0
+                        ? `+${activePerson.brightness}`
+                        : activePerson.brightness || 0}
+                    </span>
+                    <button
+                      onClick={() =>
+                        updateActivePerson({
+                          brightness: Math.min(50, (activePerson.brightness || 0) + 5),
+                        })
+                      }
+                      className="w-5 h-5 rounded bg-white/10 hover:bg-white/20 text-slate-200 text-xs flex items-center justify-center font-bold"
+                      title="Increase brightness"
+                    >
+                      +
+                    </button>
+                    {(activePerson.brightness || 0) !== 0 && (
+                      <button
+                        onClick={() => updateActivePerson({ brightness: 0 })}
+                        className="text-[10px] text-slate-400 hover:text-white px-1 ml-1"
+                        title="Reset to 0"
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <input
+                  type="range"
+                  min="-50"
+                  max="50"
+                  value={activePerson.brightness || 0}
+                  onChange={(e) =>
+                    updateActivePerson({ brightness: parseInt(e.target.value, 10) })
+                  }
+                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-400"
+                />
+              </div>
+
+              {/* Contrast Slider */}
+              <div className="space-y-1.5 bg-black/20 p-2.5 rounded-lg border border-white/5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-slate-300 flex items-center gap-1.5">
+                    <Contrast className="w-3.5 h-3.5 text-blue-400" />
+                    Contrast
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() =>
+                        updateActivePerson({
+                          contrast: Math.max(-50, (activePerson.contrast || 0) - 5),
+                        })
+                      }
+                      className="w-5 h-5 rounded bg-white/10 hover:bg-white/20 text-slate-200 text-xs flex items-center justify-center font-bold"
+                      title="Decrease contrast"
+                    >
+                      -
+                    </button>
+                    <span className="text-xs font-mono font-bold text-blue-300 w-10 text-center">
+                      {(activePerson.contrast || 0) > 0
+                        ? `+${activePerson.contrast}`
+                        : activePerson.contrast || 0}
+                    </span>
+                    <button
+                      onClick={() =>
+                        updateActivePerson({
+                          contrast: Math.min(50, (activePerson.contrast || 0) + 5),
+                        })
+                      }
+                      className="w-5 h-5 rounded bg-white/10 hover:bg-white/20 text-slate-200 text-xs flex items-center justify-center font-bold"
+                      title="Increase contrast"
+                    >
+                      +
+                    </button>
+                    {(activePerson.contrast || 0) !== 0 && (
+                      <button
+                        onClick={() => updateActivePerson({ contrast: 0 })}
+                        className="text-[10px] text-slate-400 hover:text-white px-1 ml-1"
+                        title="Reset to 0"
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <input
+                  type="range"
+                  min="-50"
+                  max="50"
+                  value={activePerson.contrast || 0}
+                  onChange={(e) =>
+                    updateActivePerson({ contrast: parseInt(e.target.value, 10) })
+                  }
+                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-400"
+                />
+              </div>
+
+              {/* Saturation Slider */}
+              <div className="space-y-1.5 bg-black/20 p-2.5 rounded-lg border border-white/5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-slate-300 flex items-center gap-1.5">
+                    <Palette className="w-3.5 h-3.5 text-emerald-400" />
+                    Color Saturation
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs font-mono font-bold text-emerald-300 w-10 text-center">
+                      {(activePerson.saturation || 0) > 0
+                        ? `+${activePerson.saturation}`
+                        : activePerson.saturation || 0}
+                    </span>
+                    {(activePerson.saturation || 0) !== 0 && (
+                      <button
+                        onClick={() => updateActivePerson({ saturation: 0 })}
+                        className="text-[10px] text-slate-400 hover:text-white px-1 ml-1"
+                        title="Reset to Natural"
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <input
+                  type="range"
+                  min="-100"
+                  max="50"
+                  value={activePerson.saturation || 0}
+                  onChange={(e) =>
+                    updateActivePerson({ saturation: parseInt(e.target.value, 10) })
+                  }
+                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-400"
+                />
+              </div>
+
+              {/* Apply Lighting to All People button */}
+              {persons.length > 1 && (
+                <button
+                  onClick={handleApplyLightingToAll}
+                  className="w-full py-2 px-3 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 text-xs font-semibold border border-blue-500/30 transition-colors flex items-center justify-center gap-1.5"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+                  Apply This Lighting to All {persons.length} People
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Section 2: Choose Print Size & Target Paper */}
@@ -967,7 +1214,7 @@ export const PassportStudio: React.FC<PassportStudioProps> = () => {
                   2
                 </span>
                 <h2 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
-                  Print Size & Paper
+                  Print Size & Paper Selection
                 </h2>
               </div>
               <span className="text-xs font-mono text-blue-400 font-bold bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">
@@ -1132,12 +1379,12 @@ export const PassportStudio: React.FC<PassportStudioProps> = () => {
               </div>
             )}
 
-            {/* Target Paper Selection */}
+            {/* Target Paper Sheet Size Selection */}
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                Target Print Paper:
+                Target Sheet Size:
               </label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {PAPER_SIZES.slice(0, 4).map((paper) => (
                   <button
                     key={paper.id}
@@ -1154,6 +1401,77 @@ export const PassportStudio: React.FC<PassportStudioProps> = () => {
                     </div>
                   </button>
                 ))}
+              </div>
+            </div>
+
+            {/* Paper Selection in Print Section (Plane Paper, Photo Glossy Paper, etc.) */}
+            <div className="pt-3 border-t border-white/10 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <FileText className="w-3.5 h-3.5 text-blue-400" />
+                  Paper Selection & Media Type:
+                </label>
+                <span className="text-[10px] text-blue-300 font-medium bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">
+                  {currentPaperType.name} ({currentPaperType.weightGsm})
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                {PAPER_TYPES.map((paperType) => {
+                  const isSelected = settings.paperTypeId === paperType.id;
+                  return (
+                    <button
+                      key={paperType.id}
+                      onClick={() =>
+                        setSettings((prev) => ({
+                          ...prev,
+                          paperTypeId: paperType.id as PaperTypeId,
+                        }))
+                      }
+                      className={`p-3 rounded-xl border text-left transition-all relative ${
+                        isSelected
+                          ? 'border-blue-400 bg-gradient-to-b from-blue-950/60 to-slate-900/90 text-white ring-2 ring-blue-400/40 shadow-lg'
+                          : 'border-white/10 bg-black/30 hover:bg-white/5 text-slate-300'
+                      }`}
+                    >
+                      {paperType.isDefault && (
+                        <span className="absolute top-2 right-2 bg-blue-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-md">
+                          Best For Photos
+                        </span>
+                      )}
+                      <div className="font-bold text-xs flex items-center gap-1.5 text-white">
+                        {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-blue-400 shrink-0" />}
+                        <span className="truncate">{paperType.name}</span>
+                      </div>
+                      <div className="text-[10px] text-blue-300/90 font-mono mt-1 flex items-center justify-between">
+                        <span>{paperType.weightGsm}</span>
+                        <span className="capitalize">{paperType.finish}</span>
+                      </div>
+                      <div className="text-[10px] text-slate-400 mt-1 line-clamp-2">
+                        {paperType.recommendedFor}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Printer Calibration Recommendation Tip */}
+              <div className="p-3 bg-blue-950/40 border border-blue-500/30 rounded-xl text-xs space-y-1">
+                <div className="flex items-center gap-1.5 font-bold text-blue-300">
+                  <Printer className="w-3.5 h-3.5 text-blue-400" />
+                  Printer Setting for {currentPaperType.name}:
+                </div>
+                <div className="text-[11px] text-slate-300 flex flex-wrap gap-x-4 gap-y-1">
+                  <span>
+                    • Media: <strong className="text-white">{currentPaperType.printerMediaSetting || 'Photo Paper'}</strong>
+                  </span>
+                  <span>
+                    • Quality: <strong className="text-white">High / Best (1200+ DPI)</strong>
+                  </span>
+                  <span>
+                    • Scaling: <strong className="text-white">100% / Actual Size (No Fit)</strong>
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -1332,7 +1650,7 @@ export const PassportStudio: React.FC<PassportStudioProps> = () => {
                   4
                 </span>
                 <span className="text-xs font-bold text-slate-200 uppercase tracking-wider">
-                  Layout Preview ({currentDisplayCount} Photos on {selectedPaper.name})
+                  Layout Preview ({currentDisplayCount} Photos on {selectedPaper.name} • {currentPaperType.name})
                 </span>
               </div>
 
@@ -1383,6 +1701,9 @@ export const PassportStudio: React.FC<PassportStudioProps> = () => {
                     Paper: <strong className="text-slate-200">{selectedPaper.name}</strong> ({selectedPaper.widthMm} × {selectedPaper.heightMm} mm)
                   </span>
                   <span>
+                    Media: <strong className="text-blue-300 font-semibold">{currentPaperType.name}</strong> ({currentPaperType.weightGsm})
+                  </span>
+                  <span>
                     Photo: <strong className="text-slate-200">{currentWidthMm} × {currentHeightMm} mm</strong>
                   </span>
                   <span>
@@ -1424,10 +1745,14 @@ export const PassportStudio: React.FC<PassportStudioProps> = () => {
           customHeightMm={currentHeightMm}
           initialCropBox={activePerson.cropBox}
           initialCorners={activePerson.quadCorners}
-          onApplyCrop={(newBox, newCorners) => {
+          initialBrightness={activePerson.brightness || 0}
+          initialContrast={activePerson.contrast || 0}
+          initialSaturation={activePerson.saturation || 0}
+          onApplyCrop={(newBox, newCorners, adjustments) => {
             updateActivePerson({
               cropBox: newBox,
               quadCorners: newCorners,
+              ...(adjustments || {}),
             });
           }}
         />

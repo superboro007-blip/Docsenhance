@@ -1,4 +1,160 @@
-import { PaperSizeConfig, PassportPreset, IDCardPreset } from '../types';
+import { PaperSizeConfig, PassportPreset, IDCardPreset, PaperTypeConfig } from '../types';
+
+export const PAPER_TYPES: PaperTypeConfig[] = [
+  {
+    id: 'glossy',
+    name: 'Photo Glossy Paper',
+    category: 'Photo Media',
+    weightGsm: '180–240 GSM',
+    finish: 'High Gloss / Vivid',
+    description: 'Ultra-bright reflective coating for vibrant colors, deep blacks, and sharp biometric passport photos.',
+    recommendedFor: 'Official Passports, Visas, Studio Portraits',
+    contrastBoost: 4,
+    brightnessBoost: 2,
+    saturationBoost: 5,
+    badge: 'Most Popular',
+    printerMediaSetting: 'Photo Paper Glossy / Premium Glossy',
+    isDefault: true,
+  },
+  {
+    id: 'plain',
+    name: 'Plain / Standard Paper',
+    category: 'Standard Copier',
+    weightGsm: '75–80 GSM',
+    finish: 'Standard Matte Uncoated',
+    description: 'Everyday office bond & copier paper. Fast drying, budget-friendly for proofing and document submissions.',
+    recommendedFor: 'Test Prints, Form Attachments, Office Use',
+    contrastBoost: 0,
+    brightnessBoost: 0,
+    saturationBoost: 0,
+    badge: 'Standard',
+    printerMediaSetting: 'Plain Paper / Standard Quality',
+  },
+  {
+    id: 'matte_photo',
+    name: 'Matte Photo Paper',
+    category: 'Photo Media',
+    weightGsm: '190–230 GSM',
+    finish: 'Smooth Matte / Anti-Glare',
+    description: 'Velvety, glare-free photo paper. Ideal for biometric scanners and embassies that reject glossy reflections.',
+    recommendedFor: 'Embassy & Schengen Visas, ID Badges',
+    contrastBoost: 2,
+    brightnessBoost: 1,
+    saturationBoost: 2,
+    badge: 'Anti-Glare',
+    printerMediaSetting: 'Matte Photo Paper / High Quality',
+  },
+  {
+    id: 'semi_gloss',
+    name: 'Semi-Gloss / Satin / Luster',
+    category: 'Studio Paper',
+    weightGsm: '200–260 GSM',
+    finish: 'Satin / Pearl Lustre',
+    description: 'Professional photo studio finish with subtle sheen, fingerprint-resistant pearl texture.',
+    recommendedFor: 'Professional Studio Work & Portfolios',
+    contrastBoost: 3,
+    brightnessBoost: 2,
+    saturationBoost: 4,
+    badge: 'Pro Studio',
+    printerMediaSetting: 'Semi-Gloss / Premium Luster',
+  },
+  {
+    id: 'cardstock',
+    name: 'Heavy Cardstock',
+    category: 'Heavyweight',
+    weightGsm: '250–300 GSM',
+    finish: 'Rigid / Thick Board',
+    description: 'Thick, rigid paper designed for durable ID cards, pocket badges, and foldable certificates.',
+    recommendedFor: 'ID Badges, Membership Cards, Tags',
+    contrastBoost: 1,
+    brightnessBoost: 0,
+    saturationBoost: 1,
+    badge: 'Durable',
+    printerMediaSetting: 'Heavyweight / Cardstock',
+  },
+  {
+    id: 'sticker',
+    name: 'Photo Sticker / Adhesive Sheet',
+    category: 'Self-Adhesive',
+    weightGsm: '130–160 GSM',
+    finish: 'Peel & Stick Sheet',
+    description: 'Pre-gummed self-adhesive backing. Peel off and stick directly to application forms without glue.',
+    recommendedFor: 'Application Forms, Exam Admit Cards',
+    contrastBoost: 3,
+    brightnessBoost: 2,
+    saturationBoost: 3,
+    badge: 'Peel & Stick',
+    printerMediaSetting: 'Label / Sticker Paper / Glossy',
+  },
+];
+
+export interface LightingPreset {
+  id: string;
+  name: string;
+  brightness: number;
+  contrast: number;
+  saturation: number;
+  sharpness: number;
+  description: string;
+  icon?: string;
+}
+
+export const PHOTO_LIGHTING_PRESETS: LightingPreset[] = [
+  {
+    id: 'natural',
+    name: 'Natural / Reset',
+    brightness: 0,
+    contrast: 0,
+    saturation: 0,
+    sharpness: 0,
+    description: 'Original unaltered photo colors and contrast',
+  },
+  {
+    id: 'studio',
+    name: 'Studio Lighting',
+    brightness: 12,
+    contrast: 14,
+    saturation: 4,
+    sharpness: 25,
+    description: 'Soft frontal studio fill light with balanced contrast',
+  },
+  {
+    id: 'bright_clear',
+    name: 'Bright & Clean',
+    brightness: 22,
+    contrast: 8,
+    saturation: 2,
+    sharpness: 15,
+    description: 'Lifts dark shadows and brightens underexposed faces',
+  },
+  {
+    id: 'vivid',
+    name: 'Vivid & Crisp',
+    brightness: 6,
+    contrast: 24,
+    saturation: 15,
+    sharpness: 40,
+    description: 'Rich contrast, punchy colors, and sharp biometric edges',
+  },
+  {
+    id: 'soft_matte',
+    name: 'Soft Tone',
+    brightness: 8,
+    contrast: -12,
+    saturation: -4,
+    sharpness: 0,
+    description: 'Gentle low-contrast lighting for harsh direct flashes',
+  },
+  {
+    id: 'bw_biometric',
+    name: 'B&W High Contrast',
+    brightness: 4,
+    contrast: 26,
+    saturation: -100,
+    sharpness: 35,
+    description: 'Black and white print with high clarity for official seals',
+  },
+];
 
 export const PAPER_SIZES: PaperSizeConfig[] = [
   {

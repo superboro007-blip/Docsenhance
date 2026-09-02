@@ -14,6 +14,24 @@ export interface QuadCorners {
 
 export type PaperSizeId = 'a4' | '4x6' | '5x7' | 'letter' | '8x10' | 'single';
 
+export type PaperTypeId = 'plain' | 'glossy' | 'matte_photo' | 'semi_gloss' | 'cardstock' | 'sticker';
+
+export interface PaperTypeConfig {
+  id: PaperTypeId;
+  name: string;
+  category: string;
+  weightGsm: string;
+  finish: string;
+  description: string;
+  recommendedFor: string;
+  contrastBoost: number;
+  brightnessBoost: number;
+  saturationBoost: number;
+  badge: string;
+  printerMediaSetting?: string;
+  isDefault?: boolean;
+}
+
 export interface PaperSizeConfig {
   id: PaperSizeId;
   name: string;
@@ -152,6 +170,7 @@ export interface IDCardSettings {
   cardsCount: number; // For multi-card A4 layout (e.g. 1 pair, 2 pairs, 4 pairs)
   includeDetailsHeader: boolean;
   headerText: string;
+  paperTypeId?: PaperTypeId;
 }
 
 export interface PassportSettings {
@@ -173,6 +192,7 @@ export interface PassportSettings {
   saturation: number; // -50 to +50
   sharpness: number; // 0 to 100
   skinSmooth: number; // 0 to 100
+  paperTypeId?: PaperTypeId;
 }
 
 export interface DocumentItem {
@@ -195,4 +215,26 @@ export interface DocumentSettings {
   marginMm: number;
   showPageBorder: boolean;
   enhanceTextClarity: boolean;
+  paperTypeId?: PaperTypeId;
 }
+
+export interface AppUser {
+  id: string;
+  fullName: string;
+  email: string;
+  username: string;
+  passwordHash: string; // Stored simulated password
+  twoFactorEnabled: boolean;
+  createdAt: string;
+  lastLoginAt?: string;
+  failedLoginAttempts: number;
+  isLocked: boolean;
+}
+
+export interface AuthSession {
+  user: AppUser;
+  token: string;
+  loginTime: string;
+  is2FAVerified: boolean;
+}
+

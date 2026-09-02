@@ -4,10 +4,17 @@ import { Navbar } from './components/Navbar';
 import { PassportStudio } from './components/PassportStudio';
 import { IDCardStudio } from './components/IDCardStudio';
 import { DocumentStudio } from './components/DocumentStudio';
+import { AuthScreen } from './components/AuthScreen';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { motion, AnimatePresence } from 'motion/react';
 
-export default function App() {
+function StudioDashboard() {
   const [activeTab, setActiveTab] = useState<StudioTab>('passport');
+  const { isAuthenticated } = useAuth();
+
+  if (!isAuthenticated) {
+    return <AuthScreen />;
+  }
 
   return (
     <div
@@ -17,7 +24,7 @@ export default function App() {
         backgroundImage: 'var(--mesh-gradient)',
       }}
     >
-      {/* Top Frosted Navbar with Tab Switching */}
+      {/* Top Frosted Navbar with Tab Switching & Always-Visible Logout */}
       <Navbar activeTab={activeTab} onSelectTab={setActiveTab} />
 
       {/* Main Content Area */}
@@ -92,3 +99,12 @@ export default function App() {
     </div>
   );
 }
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <StudioDashboard />
+    </AuthProvider>
+  );
+}
+

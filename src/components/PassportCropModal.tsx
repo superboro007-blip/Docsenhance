@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { PassportPreset, QuadCorners } from '../types';
+import { PHOTO_LIGHTING_PRESETS, LightingPreset } from '../data/presets';
 import { FourCornerFreeCrop } from './FourCornerFreeCrop';
 import {
   Crop,
@@ -17,7 +18,17 @@ import {
   ZoomOut,
   Crosshair,
   RotateCcw,
+  Sun,
+  Contrast,
+  Sliders,
+  Palette,
 } from 'lucide-react';
+
+export interface PhotoAdjustments {
+  brightness: number;
+  contrast: number;
+  saturation: number;
+}
 
 interface PassportCropModalProps {
   isOpen: boolean;
@@ -28,7 +39,14 @@ interface PassportCropModalProps {
   customHeightMm: number;
   initialCropBox?: { x: number; y: number; width: number; height: number };
   initialCorners?: QuadCorners;
-  onApplyCrop: (cropBox: { x: number; y: number; width: number; height: number }, quadCorners?: QuadCorners) => void;
+  initialBrightness?: number;
+  initialContrast?: number;
+  initialSaturation?: number;
+  onApplyCrop: (
+    cropBox: { x: number; y: number; width: number; height: number },
+    quadCorners?: QuadCorners,
+    adjustments?: PhotoAdjustments
+  ) => void;
 }
 
 type CropEngineMode = 'box' | 'quad';
@@ -42,6 +60,9 @@ export const PassportCropModal: React.FC<PassportCropModalProps> = ({
   customHeightMm,
   initialCropBox,
   initialCorners,
+  initialBrightness = 0,
+  initialContrast = 0,
+  initialSaturation = 0,
   onApplyCrop,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -67,6 +88,13 @@ export const PassportCropModal: React.FC<PassportCropModalProps> = ({
     bl: { x: 8, y: 94 },
   });
 
+  // Lighting & Color State in Crop Modal
+  const [brightness, setBrightness] = useState<number>(initialBrightness);
+  const [contrast, setContrast] = useState<number>(initialContrast);
+  const [saturation, setSaturation] = useState<number>(initialSaturation);
+
+  const [sidebarTab, setSidebarTab] = useState<'framing' | 'lighting'>('framing');
+
   const [isDragging, setIsDragging] = useState(false);
   const [dragHandle, setDragHandle] = useState<string | null>(null);
   const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -81,9 +109,13 @@ export const PassportCropModal: React.FC<PassportCropModalProps> = ({
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [aiMessage, setAiMessage] = useState<string | null>(null);
 
-  // Initialize crop box and corners on modal open
+  // Initialize crop box, corners, and lighting on modal open
   useEffect(() => {
     if (!isOpen) return;
+
+    setBrightness(initialBrightness);
+    setContrast(initialContrast);
+    setSaturation(initialSaturation);
 
     if (initialCropBox) {
       setCropBox(initialCropBox);
@@ -106,7 +138,7 @@ export const PassportCropModal: React.FC<PassportCropModalProps> = ({
         bl: { x: 8, y: 94 },
       });
     }
-  }, [isOpen, initialCropBox, initialCorners]);
+  }, [isOpen, initialCropBox, initialCorners, initialBrightness, initialContrast, initialSaturation]);
 
   // AI Smart Face Detection & Framing
   const handleAiAutoCrop = async () => {
@@ -438,7 +470,7 @@ export const PassportCropModal: React.FC<PassportCropModalProps> = ({
               </div>
             </div>
 
-            {/* Workspace: Image Canvas + Fine-Tune Nudge Panel */}
+              {/* Workspace: Image Canvas + Fine-Tune Nudge Panel */}
             <div className="flex-1 flex flex-col lg:flex-row overflow-hidden min-h-[380px] max-h-[580px]">
               {/* Main Visual Freeform Crop Canvas */}
               <div className="flex-1 bg-slate-950 p-4 flex items-center justify-center overflow-hidden relative select-none">
@@ -451,7 +483,10 @@ export const PassportCropModal: React.FC<PassportCropModalProps> = ({
                     ref={imgRef}
                     src={imageSrc}
                     alt="Crop Source"
-                    className="max-h-[480px] max-w-full object-contain pointer-events-none rounded-sm"
+                    className="max-h-[480px] max-w-full object-contain pointer-events-none rounded-sm transition-all"
+                    style={{
+                      filter: `brightness(${100 + brightness}%) contrast(${100 + contrast}%) saturate(${100 + saturation}%)`,
+                    }}
                   />
 
                   {/* Dark Mask around crop box */}
@@ -594,125 +629,279 @@ export const PassportCropModal: React.FC<PassportCropModalProps> = ({
                 </div>
               </div>
 
-              {/* Right Manual Fine-Tuning & Nudge Control Panel */}
-              <div className="w-full lg:w-72 bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-800 p-4 space-y-4 overflow-y-auto">
-                <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                  <Move className="w-3.5 h-3.5 text-blue-400" /> Manual Fine-Tuning
-                </h3>
-
-                {/* Position Nudge D-Pad */}
-                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">
-                  <div className="text-[11px] font-medium text-slate-400 text-center">
-                    Nudge Position (1% steps)
-                  </div>
-                  <div className="flex flex-col items-center gap-1">
-                    <button
-                      onClick={() => nudge(0, -1)}
-                      className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200"
-                      title="Nudge Up"
-                    >
-                      <ArrowUp className="w-4 h-4" />
-                    </button>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => nudge(-1, 0)}
-                        className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200"
-                        title="Nudge Left"
-                      >
-                        <ArrowLeft className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => {
-                          centerHorizontally();
-                          centerVertically();
-                        }}
-                        className="px-2 py-1 text-[10px] font-bold rounded-lg bg-blue-600/30 text-blue-300 border border-blue-500/40 hover:bg-blue-600/50"
-                        title="Center Box"
-                      >
-                        Center
-                      </button>
-                      <button
-                        onClick={() => nudge(1, 0)}
-                        className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200"
-                        title="Nudge Right"
-                      >
-                        <ArrowRight className="w-4 h-4" />
-                      </button>
-                    </div>
-                    <button
-                      onClick={() => nudge(0, 1)}
-                      className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200"
-                      title="Nudge Down"
-                    >
-                      <ArrowDown className="w-4 h-4" />
-                    </button>
-                  </div>
+              {/* Right Manual Fine-Tuning & Lighting Panel */}
+              <div className="w-full lg:w-80 bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-800 flex flex-col">
+                {/* Tabs: Framing / Lighting */}
+                <div className="grid grid-cols-2 p-2 gap-1 bg-slate-950 border-b border-slate-800">
+                  <button
+                    onClick={() => setSidebarTab('framing')}
+                    className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-bold transition-all ${
+                      sidebarTab === 'framing'
+                        ? 'bg-blue-600 text-white shadow-md'
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                    }`}
+                  >
+                    <Move className="w-3.5 h-3.5" />
+                    Framing & Scale
+                  </button>
+                  <button
+                    onClick={() => setSidebarTab('lighting')}
+                    className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-bold transition-all ${
+                      sidebarTab === 'lighting'
+                        ? 'bg-amber-600 text-white shadow-md'
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                    }`}
+                  >
+                    <Sun className="w-3.5 h-3.5 text-amber-300" />
+                    Brightness & Contrast
+                  </button>
                 </div>
 
-                {/* Zoom / Scale Crop Box */}
-                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">
-                  <div className="text-[11px] font-medium text-slate-400">Crop Box Scale</div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      onClick={() => zoomCrop(0.92)}
-                      className="inline-flex items-center justify-center gap-1 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200"
-                    >
-                      <ZoomIn className="w-3.5 h-3.5 text-blue-400" /> Zoom In
-                    </button>
-                    <button
-                      onClick={() => zoomCrop(1.08)}
-                      className="inline-flex items-center justify-center gap-1 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200"
-                    >
-                      <ZoomOut className="w-3.5 h-3.5 text-indigo-400" /> Zoom Out
-                    </button>
-                  </div>
-                </div>
+                <div className="p-4 space-y-4 overflow-y-auto flex-1">
+                  {sidebarTab === 'framing' ? (
+                    <>
+                      {/* Position Nudge D-Pad */}
+                      <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">
+                        <div className="text-[11px] font-medium text-slate-400 text-center">
+                          Nudge Position (1% steps)
+                        </div>
+                        <div className="flex flex-col items-center gap-1">
+                          <button
+                            onClick={() => nudge(0, -1)}
+                            className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200"
+                            title="Nudge Up"
+                          >
+                            <ArrowUp className="w-4 h-4" />
+                          </button>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => nudge(-1, 0)}
+                              className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200"
+                              title="Nudge Left"
+                            >
+                              <ArrowLeft className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                centerHorizontally();
+                                centerVertically();
+                              }}
+                              className="px-2 py-1 text-[10px] font-bold rounded-lg bg-blue-600/30 text-blue-300 border border-blue-500/40 hover:bg-blue-600/50"
+                              title="Center Box"
+                            >
+                              Center
+                            </button>
+                            <button
+                              onClick={() => nudge(1, 0)}
+                              className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200"
+                              title="Nudge Right"
+                            >
+                              <ArrowRight className="w-4 h-4" />
+                            </button>
+                          </div>
+                          <button
+                            onClick={() => nudge(0, 1)}
+                            className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200"
+                            title="Nudge Down"
+                          >
+                            <ArrowDown className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
 
-                {/* Direct Percent Dimension Sliders */}
-                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-3">
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[11px] text-slate-400">
-                      <span>Width Size</span>
-                      <span className="font-mono text-blue-400">{Math.round(cropBox.width)}%</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="10"
-                      max="100"
-                      value={cropBox.width}
-                      onChange={(e) => {
-                        const w = parseFloat(e.target.value);
-                        setCropBox((prev) => ({
-                          ...prev,
-                          width: w,
-                          x: Math.max(0, Math.min(100 - w, prev.x)),
-                        }));
-                      }}
-                      className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                    />
-                  </div>
+                      {/* Zoom / Scale Crop Box */}
+                      <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">
+                        <div className="text-[11px] font-medium text-slate-400">Crop Box Scale</div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            onClick={() => zoomCrop(0.92)}
+                            className="inline-flex items-center justify-center gap-1 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200"
+                          >
+                            <ZoomIn className="w-3.5 h-3.5 text-blue-400" /> Zoom In
+                          </button>
+                          <button
+                            onClick={() => zoomCrop(1.08)}
+                            className="inline-flex items-center justify-center gap-1 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200"
+                          >
+                            <ZoomOut className="w-3.5 h-3.5 text-indigo-400" /> Zoom Out
+                          </button>
+                        </div>
+                      </div>
 
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-[11px] text-slate-400">
-                      <span>Height Size</span>
-                      <span className="font-mono text-blue-400">{Math.round(cropBox.height)}%</span>
+                      {/* Direct Percent Dimension Sliders */}
+                      <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-3">
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-[11px] text-slate-400">
+                            <span>Width Size</span>
+                            <span className="font-mono text-blue-400">{Math.round(cropBox.width)}%</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="10"
+                            max="100"
+                            value={cropBox.width}
+                            onChange={(e) => {
+                              const w = parseFloat(e.target.value);
+                              setCropBox((prev) => ({
+                                ...prev,
+                                width: w,
+                                x: Math.max(0, Math.min(100 - w, prev.x)),
+                              }));
+                            }}
+                            className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-[11px] text-slate-400">
+                            <span>Height Size</span>
+                            <span className="font-mono text-blue-400">{Math.round(cropBox.height)}%</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="10"
+                            max="100"
+                            value={cropBox.height}
+                            onChange={(e) => {
+                              const h = parseFloat(e.target.value);
+                              setCropBox((prev) => ({
+                                ...prev,
+                                height: h,
+                                y: Math.max(0, Math.min(100 - h, prev.y)),
+                              }));
+                            }}
+                            className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                          />
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    /* Lighting & Contrast Tab */
+                    <div className="space-y-4">
+                      {/* 1-Click Presets */}
+                      <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">
+                        <div className="text-[11px] font-bold text-slate-300 flex items-center justify-between">
+                          <span>Quick Lighting Presets</span>
+                          <button
+                            onClick={() => {
+                              setBrightness(0);
+                              setContrast(0);
+                              setSaturation(0);
+                            }}
+                            className="text-[10px] text-blue-400 hover:underline flex items-center gap-1"
+                          >
+                            <RotateCcw className="w-2.5 h-2.5" /> Reset
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {PHOTO_LIGHTING_PRESETS.map((preset) => (
+                            <button
+                              key={preset.id}
+                              onClick={() => {
+                                setBrightness(preset.brightness);
+                                setContrast(preset.contrast);
+                                setSaturation(preset.saturation);
+                              }}
+                              className="px-2 py-1.5 rounded-lg text-[11px] font-semibold text-left bg-slate-800/80 hover:bg-slate-700 text-slate-200 border border-slate-700/60 hover:border-amber-500/40 transition-all truncate"
+                              title={preset.description}
+                            >
+                              {preset.name}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Brightness Slider */}
+                      <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                            <Sun className="w-3.5 h-3.5 text-amber-400" /> Brightness
+                          </span>
+                          <span className="text-xs font-mono font-bold text-amber-400">
+                            {brightness > 0 ? `+${brightness}` : brightness}
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="-50"
+                          max="50"
+                          value={brightness}
+                          onChange={(e) => setBrightness(parseInt(e.target.value))}
+                          className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                        />
+                        <div className="flex justify-between text-[10px] text-slate-500">
+                          <span>-50 (Darker)</span>
+                          <button
+                            onClick={() => setBrightness(0)}
+                            className="text-slate-400 hover:text-white"
+                          >
+                            0 (Default)
+                          </button>
+                          <span>+50 (Brighter)</span>
+                        </div>
+                      </div>
+
+                      {/* Contrast Slider */}
+                      <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                            <Contrast className="w-3.5 h-3.5 text-blue-400" /> Contrast
+                          </span>
+                          <span className="text-xs font-mono font-bold text-blue-400">
+                            {contrast > 0 ? `+${contrast}` : contrast}
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="-50"
+                          max="50"
+                          value={contrast}
+                          onChange={(e) => setContrast(parseInt(e.target.value))}
+                          className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                        />
+                        <div className="flex justify-between text-[10px] text-slate-500">
+                          <span>-50 (Flat)</span>
+                          <button
+                            onClick={() => setContrast(0)}
+                            className="text-slate-400 hover:text-white"
+                          >
+                            0 (Default)
+                          </button>
+                          <span>+50 (Deep)</span>
+                        </div>
+                      </div>
+
+                      {/* Saturation Slider */}
+                      <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                            <Palette className="w-3.5 h-3.5 text-emerald-400" /> Color Saturation
+                          </span>
+                          <span className="text-xs font-mono font-bold text-emerald-400">
+                            {saturation > 0 ? `+${saturation}` : saturation}
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="-100"
+                          max="50"
+                          value={saturation}
+                          onChange={(e) => setSaturation(parseInt(e.target.value))}
+                          className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                        />
+                        <div className="flex justify-between text-[10px] text-slate-500">
+                          <span>-100 (B&W)</span>
+                          <button
+                            onClick={() => setSaturation(0)}
+                            className="text-slate-400 hover:text-white"
+                          >
+                            0 (Natural)
+                          </button>
+                          <span>+50 (Vivid)</span>
+                        </div>
+                      </div>
                     </div>
-                    <input
-                      type="range"
-                      min="10"
-                      max="100"
-                      value={cropBox.height}
-                      onChange={(e) => {
-                        const h = parseFloat(e.target.value);
-                        setCropBox((prev) => ({
-                          ...prev,
-                          height: h,
-                          y: Math.max(0, Math.min(100 - h, prev.y)),
-                        }));
-                      }}
-                      className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
-                    />
-                  </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -729,7 +918,7 @@ export const PassportCropModal: React.FC<PassportCropModalProps> = ({
               </span>
             ) : (
               <span>
-                Freeform Box Crop: {Math.round(cropBox.width)}% × {Math.round(cropBox.height)}%
+                Freeform Box Crop: {Math.round(cropBox.width)}% × {Math.round(cropBox.height)}% • Brightness: {brightness >= 0 ? `+${brightness}` : brightness}, Contrast: {contrast >= 0 ? `+${contrast}` : contrast}
               </span>
             )}
           </div>
@@ -743,13 +932,17 @@ export const PassportCropModal: React.FC<PassportCropModalProps> = ({
             </button>
             <button
               onClick={() => {
-                onApplyCrop(cropBox, engineMode === 'quad' ? corners : undefined);
+                onApplyCrop(cropBox, engineMode === 'quad' ? corners : undefined, {
+                  brightness,
+                  contrast,
+                  saturation,
+                });
                 onClose();
               }}
               className="inline-flex items-center gap-2 px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-xl shadow-lg transition-all"
             >
               <Check className="w-4 h-4" />
-              {engineMode === 'quad' ? 'Apply 4-Corner Warp' : 'Apply Freeform Crop'}
+              {engineMode === 'quad' ? 'Apply 4-Corner Warp' : 'Apply Crop & Lighting'}
             </button>
           </div>
         </div>
