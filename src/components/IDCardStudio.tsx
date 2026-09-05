@@ -21,6 +21,7 @@ import {
   renderIDCardSheetCanvas,
   exportToPDF,
   exportDuplexIDCardPDF,
+  exportToJPG,
 } from '../utils/imageProcessing';
 import {
   detectAndExtractCardsFromPdf,
@@ -33,12 +34,14 @@ import { WebcamModal } from './WebcamModal';
 import { BackgroundRemovalModal } from './BackgroundRemovalModal';
 import { PdfPasswordModal } from './PdfPasswordModal';
 import { PdfCardResultModal } from './PdfCardResultModal';
+import { IDCardOrientationModal } from './IDCardOrientationModal';
 import {
   Upload,
   Camera,
   Crop,
   Printer,
   Download,
+  FileImage,
   CreditCard,
   ArrowLeftRight,
   Layers,
@@ -137,6 +140,7 @@ export const IDCardStudio: React.FC = () => {
   const [webcamMode, setWebcamMode] = useState<'idcard_front' | 'idcard_back' | null>(null);
   const [isAiDetecting, setIsAiDetecting] = useState(false);
   const [aiDetectNotification, setAiDetectNotification] = useState<string | null>(null);
+  const [isOrientationModalOpen, setIsOrientationModalOpen] = useState(false);
 
   // Render state
   const [isRendering, setIsRendering] = useState(false);
@@ -152,9 +156,39 @@ export const IDCardStudio: React.FC = () => {
   const fileInputAutoRef = useRef<HTMLInputElement>(null);
   const lastRenderedCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // Card dimensions
-  const cardWidthMm = selectedPreset.id === 'dl_custom' ? settings.customWidthMm : selectedPreset.widthMm;
-  const cardHeightMm = selectedPreset.id === 'dl_custom' ? settings.customHeightMm : selectedPreset.heightMm;
+  // Card dimensions taking orientation (Landscape vs Portrait) into account
+  const baseWidth = selectedPreset.id === 'dl_custom' ? settings.customWidthMm : selectedPreset.widthMm;
+  const baseHeight = selectedPreset.id === 'dl_custom' ? settings.customHeightMm : selectedPreset.heightMm;
+
+  const cardWidthMm = settings.orientation === 'portrait'
+    ? Math.min(baseWidth, baseHeight)
+    : Math.max(baseWidth, baseHeight);
+  const cardHeightMm = settings.orientation === 'portrait'
+    ? Math.max(baseWidth, baseHeight)
+    : Math.min(baseWidth, baseHeight);
+
+  // Orientation switch handler
+  const handleOrientationChange = (orientation: 'landscape' | 'portrait') => {
+    setSettings((prev) => {
+      const w = prev.customWidthMm || 85.6;
+      const h = prev.customHeightMm || 53.98;
+      const newWidth = orientation === 'portrait' ? Math.min(w, h) : Math.max(w, h);
+      const newHeight = orientation === 'portrait' ? Math.max(w, h) : Math.min(w, h);
+
+      return {
+        ...prev,
+        orientation,
+        customWidthMm: newWidth,
+        customHeightMm: newHeight,
+      };
+    });
+    setAiDetectNotification(
+      `✓ ID Card Orientation set to ${
+        orientation === 'landscape' ? 'Horizontal (Landscape)' : 'Vertical (Portrait)'
+      }`
+    );
+    setTimeout(() => setAiDetectNotification(null), 3500);
+  };
 
   // Global Clipboard Paste (Ctrl+V / Cmd+V)
   useEffect(() => {
@@ -716,6 +750,16 @@ export const IDCardStudio: React.FC = () => {
     confetti({ particleCount: 40, spread: 60, origin: { y: 0.8 } });
   };
 
+  // Export High-Res Sheet as JPG
+  const handleExportJPG = () => {
+    if (!lastRenderedCanvasRef.current) return;
+    exportToJPG(
+      lastRenderedCanvasRef.current,
+      `id_card_${settings.orientation}_${settings.layoutMode}_${cardWidthMm}x${cardHeightMm}mm_${selectedPaper.id}.jpg`
+    );
+    confetti({ particleCount: 40, spread: 60, origin: { y: 0.8 } });
+  };
+
   return (
     <div
       onDragOver={handleGlobalDragOver}
@@ -752,6 +796,26 @@ export const IDCardStudio: React.FC = () => {
           <p className="text-sm text-slate-400 mt-1">
             Upload your ID PDF (Aadhaar, PAN, Voter Card, etc.) or photos. Manually crop and align Front and Back sides, adjust perspective, and prepare 300 DPI ready-to-print sheets.
           </p>
+          {/* Active ID Card Orientation Display & Modal Trigger */}
+          <div className="flex flex-wrap items-center gap-2 mt-2.5 pt-2.5 border-t border-white/10">
+            <div className="flex items-center gap-1.5 text-xs text-slate-300">
+              <span className="text-slate-400 font-medium">Format:</span>
+              <span className="font-semibold text-white flex items-center gap-1">
+                {settings.orientation === 'portrait' ? 'Vertical (Portrait)' : 'Horizontal (Landscape)'}
+              </span>
+              <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/15 px-1.5 py-0.5 rounded border border-emerald-500/30">
+                {cardWidthMm.toFixed(1)} × {cardHeightMm.toFixed(1)} mm
+              </span>
+            </div>
+            <button
+              id="header-choose-orientation-btn"
+              type="button"
+              onClick={() => setIsOrientationModalOpen(true)}
+              className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-blue-600/30 hover:bg-blue-600/50 text-blue-300 border border-blue-500/40 transition-colors flex items-center gap-1"
+            >
+              Choose Orientation ↗
+            </button>
+          </div>
         </div>
 
         {/* Quick Sample / Reset buttons */}
@@ -1265,6 +1329,76 @@ export const IDCardStudio: React.FC = () => {
 
           {/* Card 2: Output Settings for ID Card */}
           <div className="glass-card rounded-2xl p-5 border border-white/10 shadow-lg space-y-4">
+            {/* ID Card Orientation Format Section */}
+            <div className="p-3 bg-black/40 border border-white/10 rounded-xl space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-semibold text-slate-200">ID Card Orientation</span>
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    {cardWidthMm.toFixed(1)} × {cardHeightMm.toFixed(1)} mm
+                  </span>
+                </div>
+                <button
+                  id="open-orientation-modal-card-btn"
+                  type="button"
+                  onClick={() => setIsOrientationModalOpen(true)}
+                  className="text-xs font-semibold text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1 hover:underline"
+                >
+                  Choose Format ↗
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  id="orientation-btn-landscape"
+                  onClick={() => handleOrientationChange('landscape')}
+                  className={`p-2.5 rounded-xl border text-left transition-all flex items-center justify-between ${
+                    settings.orientation === 'landscape'
+                      ? 'border-blue-500/80 bg-blue-500/20 text-white font-semibold ring-1 ring-blue-500/40 shadow-xs'
+                      : 'border-white/10 hover:bg-white/5 text-slate-300'
+                  }`}
+                >
+                  <div className="space-y-0.5">
+                    <div className="text-xs font-bold flex items-center gap-1.5">
+                      <span className="w-3.5 h-2 rounded-xs border border-current inline-block" />
+                      Horizontal
+                    </div>
+                    <div className="text-[10px] text-slate-400">Landscape (85.6 × 54mm)</div>
+                  </div>
+                  {settings.orientation === 'landscape' && (
+                    <span className="w-4 h-4 rounded-full bg-blue-500 text-white flex items-center justify-center text-[10px] shrink-0 ml-1">
+                      ✓
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  id="orientation-btn-portrait"
+                  onClick={() => handleOrientationChange('portrait')}
+                  className={`p-2.5 rounded-xl border text-left transition-all flex items-center justify-between ${
+                    settings.orientation === 'portrait'
+                      ? 'border-blue-500/80 bg-blue-500/20 text-white font-semibold ring-1 ring-blue-500/40 shadow-xs'
+                      : 'border-white/10 hover:bg-white/5 text-slate-300'
+                  }`}
+                >
+                  <div className="space-y-0.5">
+                    <div className="text-xs font-bold flex items-center gap-1.5">
+                      <span className="w-2 h-3.5 rounded-xs border border-current inline-block" />
+                      Vertical
+                    </div>
+                    <div className="text-[10px] text-slate-400">Portrait (54 × 85.6mm)</div>
+                  </div>
+                  {settings.orientation === 'portrait' && (
+                    <span className="w-4 h-4 rounded-full bg-blue-500 text-white flex items-center justify-center text-[10px] shrink-0 ml-1">
+                      ✓
+                    </span>
+                  )}
+                </button>
+              </div>
+            </div>
+
             <div className="flex bg-black/30 p-1 rounded-xl border border-white/10">
               <button
                 onClick={() => setActiveSettingsTab('layout')}
@@ -1591,13 +1725,22 @@ export const IDCardStudio: React.FC = () => {
                 </span>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <button
                   onClick={handlePrintSheet}
                   className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl glass-card hover:bg-white/10 text-white text-xs font-semibold border border-white/20 transition-all"
                 >
                   <Printer className="w-3.5 h-3.5 text-slate-300" />
                   Print Direct
+                </button>
+                <button
+                  id="save-as-jpg-idcard-btn"
+                  onClick={handleExportJPG}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-md transition-all"
+                  title="Save printable ID card sheet as high-resolution JPG image"
+                >
+                  <FileImage className="w-3.5 h-3.5" />
+                  Save as JPG
                 </button>
                 <button
                   onClick={handleExportPDF}
@@ -1655,8 +1798,8 @@ export const IDCardStudio: React.FC = () => {
           imageSrc={activeCropSide === 'front' ? frontCard?.dataUrl || '' : backCard?.dataUrl || ''}
           side={activeCropSide}
           preset={selectedPreset}
-          customWidthMm={settings.customWidthMm}
-          customHeightMm={settings.customHeightMm}
+          customWidthMm={cardWidthMm}
+          customHeightMm={cardHeightMm}
           initialCropBox={activeCropSide === 'front' ? frontCard?.cropBox : backCard?.cropBox}
           initialCorners={activeCropSide === 'front' ? frontCard?.quadCorners : backCard?.quadCorners}
           onApplyCrop={(newBox, newCorners) => {
@@ -1783,6 +1926,14 @@ export const IDCardStudio: React.FC = () => {
           setAiDetectNotification('✓ Cards applied directly to ID Card Studio canvas');
           setTimeout(() => setAiDetectNotification(null), 3000);
         }}
+      />
+
+      {/* ID Card Orientation Selection Modal */}
+      <IDCardOrientationModal
+        isOpen={isOrientationModalOpen}
+        onClose={() => setIsOrientationModalOpen(false)}
+        currentOrientation={settings.orientation}
+        onSelectOrientation={handleOrientationChange}
       />
     </div>
   );

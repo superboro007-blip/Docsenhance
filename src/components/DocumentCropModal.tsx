@@ -501,6 +501,31 @@ export const DocumentCropModal: React.FC<DocumentCropModalProps> = ({
     };
   }, [isDragging, handleMouseMove, handleMouseUp]);
 
+  const handleConfirmCrop = useCallback(() => {
+    if (engineMode === 'quad') {
+      onApplyCrop(cropBox, corners, rotation);
+    } else {
+      onApplyCrop(cropBox, undefined, rotation);
+    }
+    onClose();
+  }, [engineMode, cropBox, corners, rotation, onApplyCrop, onClose]);
+
+  // Keyboard shortcuts: Enter to confirm crop, Escape to close
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleConfirmCrop();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, handleConfirmCrop, onClose]);
+
   if (!isOpen) return null;
 
   return (
@@ -522,12 +547,26 @@ export const DocumentCropModal: React.FC<DocumentCropModalProps> = ({
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            className="p-2 text-slate-400 hover:text-white rounded-full hover:bg-slate-800 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              id="doc-header-confirm-crop-btn"
+              type="button"
+              onClick={handleConfirmCrop}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs sm:text-sm font-bold shadow-lg shadow-purple-950/50 transition-all hover:scale-[1.02] active:scale-95 border border-purple-400/40 cursor-pointer"
+              title="Confirm and apply crop (Enter)"
+            >
+              <Check className="w-4 h-4" />
+              Confirm Crop
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-2 text-slate-400 hover:text-white rounded-full hover:bg-slate-800 transition-colors"
+              title="Cancel (Esc)"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Primary Engine Mode Switcher */}
@@ -630,7 +669,7 @@ export const DocumentCropModal: React.FC<DocumentCropModalProps> = ({
         </div>
 
         {/* Workspace */}
-        <div className="flex-1 flex flex-col lg:flex-row overflow-hidden min-h-[380px] max-h-[580px]">
+        <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden">
           {/* Visual Canvas */}
           <div className="flex-1 bg-slate-950 p-4 flex items-center justify-center overflow-hidden relative select-none">
             <div
@@ -744,7 +783,19 @@ export const DocumentCropModal: React.FC<DocumentCropModalProps> = ({
           </div>
 
           {/* Right Fine-Tuning Panel */}
-          <div className="w-full lg:w-72 bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-800 p-4 space-y-4 overflow-y-auto">
+          <div className="w-full lg:w-72 bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-800 p-4 space-y-4 overflow-y-auto shrink-0">
+            {/* Direct Confirm Crop Button in Sidebar */}
+            <button
+              id="doc-sidebar-confirm-crop-btn"
+              type="button"
+              onClick={handleConfirmCrop}
+              className="w-full py-2.5 px-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs sm:text-sm font-bold shadow-lg shadow-purple-950/50 border border-purple-400/40 flex items-center justify-center gap-2 transition-all hover:scale-[1.01] active:scale-98 cursor-pointer"
+              title="Confirm and apply crop (Enter)"
+            >
+              <Check className="w-4 h-4" />
+              Confirm Crop
+            </button>
+
             <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
               <Move className="w-3.5 h-3.5 text-purple-400" /> Crop Fine-Tuning
             </h3>
@@ -857,8 +908,8 @@ export const DocumentCropModal: React.FC<DocumentCropModalProps> = ({
       </>
     )}
 
-        {/* Footer */}
-        <div className="px-5 py-3 bg-slate-950 border-t border-slate-800 flex items-center justify-between flex-wrap gap-3">
+        {/* Footer (Sticky & Always Visible) */}
+        <div className="px-5 py-3 bg-slate-950 border-t border-slate-800 flex items-center justify-between flex-wrap gap-3 sticky bottom-0 z-20 shrink-0">
           <div className="text-xs text-slate-400 flex items-center gap-2">
             {engineMode === 'quad' ? (
               <>
@@ -875,24 +926,21 @@ export const DocumentCropModal: React.FC<DocumentCropModalProps> = ({
 
           <div className="flex items-center gap-2.5">
             <button
+              type="button"
               onClick={onClose}
               className="px-4 py-2 text-xs font-semibold text-slate-300 bg-slate-800 hover:bg-slate-700 rounded-xl transition-colors"
             >
               Cancel
             </button>
             <button
-              onClick={() => {
-                if (engineMode === 'quad') {
-                  onApplyCrop(cropBox, corners, rotation);
-                } else {
-                  onApplyCrop(cropBox, undefined, rotation);
-                }
-                onClose();
-              }}
-              className="inline-flex items-center gap-2 px-5 py-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-500 rounded-xl shadow-lg transition-all"
+              id="doc-footer-confirm-crop-btn"
+              type="button"
+              onClick={handleConfirmCrop}
+              className="inline-flex items-center gap-2 px-6 py-2.5 text-xs font-bold text-white bg-purple-600 hover:bg-purple-500 rounded-xl shadow-lg shadow-purple-950/50 transition-all hover:scale-[1.02] active:scale-95 border border-purple-400/40 cursor-pointer"
+              title="Confirm and apply crop (Enter)"
             >
               <Check className="w-4 h-4" />
-              {engineMode === 'quad' ? 'Apply Perspective Freecrop' : 'Apply Document Crop'}
+              Confirm Crop
             </button>
           </div>
         </div>

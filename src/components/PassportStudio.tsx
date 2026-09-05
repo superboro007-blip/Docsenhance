@@ -19,6 +19,7 @@ import {
   renderPassportSheetCanvas,
   renderMultiPersonSheetCanvas,
   exportToPDF,
+  exportToJPG,
   RenderPersonItem,
 } from '../utils/imageProcessing';
 import { PassportCropModal } from './PassportCropModal';
@@ -31,6 +32,7 @@ import {
   Crop,
   Printer,
   Download,
+  FileImage,
   Sparkles,
   RefreshCw,
   Plus,
@@ -553,6 +555,16 @@ export const PassportStudio: React.FC<PassportStudioProps> = () => {
     confetti({ particleCount: 45, spread: 65, origin: { y: 0.8 } });
   };
 
+  // Download High-Res JPG Sheet
+  const handleDownloadJPG = () => {
+    if (!lastRenderedCanvasRef.current) return;
+    exportToJPG(
+      lastRenderedCanvasRef.current,
+      `photo_sheet_${currentWidthMm}x${currentHeightMm}mm_${selectedPaper.id}.jpg`
+    );
+    confetti({ particleCount: 45, spread: 65, origin: { y: 0.8 } });
+  };
+
   // Download Single Cropped Photo of Active Person
   const handleDownloadSinglePhoto = () => {
     if (!activePerson.processedPhotoUrl) return;
@@ -618,11 +630,6 @@ export const PassportStudio: React.FC<PassportStudioProps> = () => {
     }
   };
 
-  // Preset quantities array for simple 1-click selection
-  const quickQuantities = [1, 2, 4, 6, 8, 12, 18, 24, 30, 36].filter(
-    (q) => q <= maxPossiblePhotos || q === 1
-  );
-
   return (
     <div
       onDragOver={handleDragOver}
@@ -662,10 +669,6 @@ export const PassportStudio: React.FC<PassportStudioProps> = () => {
                 300 DPI High-Res Print
               </span>
             </div>
-            
-            <p className="text-sm md:text-base font-medium text-slate-100 leading-relaxed max-w-3xl">
-              &ldquo;Upload photos, select size and how many copies to print, frame easily with Freeform or 4-Corner crop, and generate clean print-ready sheets instantly.&rdquo;
-            </p>
           </div>
 
           {/* Quick Upload Actions */}
@@ -742,7 +745,7 @@ export const PassportStudio: React.FC<PassportStudioProps> = () => {
             </span>
             <div className="truncate">
               <div className="text-xs font-bold text-blue-300 truncate">How Many Photos</div>
-              <div className="text-[10px] text-blue-200/80">1, 4, 6, 8, 12, Max</div>
+              <div className="text-[10px] text-blue-200/80">Custom Quantity</div>
             </div>
           </div>
 
@@ -1493,73 +1496,22 @@ export const PassportStudio: React.FC<PassportStudioProps> = () => {
               </span>
             </div>
 
-            {/* Quick 1-Click Quantity Buttons */}
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-2">
-                1-Click Quick Select:
-              </label>
-              <div className="grid grid-cols-4 sm:grid-cols-5 gap-1.5">
-                {quickQuantities.map((num) => {
-                  const isSelected = currentDisplayCount === num;
-                  return (
-                    <button
-                      key={num}
-                      onClick={() => setPhotoQuantity(num)}
-                      className={`py-2 px-1 text-center rounded-xl text-xs font-bold transition-all border ${
-                        isSelected
-                          ? 'bg-blue-600 border-blue-400 text-white shadow-lg ring-2 ring-blue-400/40 scale-102'
-                          : 'bg-black/30 border-white/10 hover:bg-white/10 text-slate-300 hover:text-white'
-                      }`}
-                    >
-                      <div className="text-sm font-black">{num}</div>
-                      <div className="text-[9px] opacity-75 font-normal">
-                        {num === 1
-                          ? 'photo'
-                          : num === 6
-                          ? '1 row'
-                          : num === 12
-                          ? '2 rows'
-                          : num === 18
-                          ? '3 rows'
-                          : num === 24
-                          ? '4 rows'
-                          : num === 30
-                          ? '5 rows'
-                          : num === 36
-                          ? '6 rows'
-                          : 'photos'}
-                      </div>
-                    </button>
-                  );
-                })}
-
-                {/* Max / Fill Sheet Button */}
-                <button
-                  onClick={() => setPhotoQuantity(maxPossiblePhotos)}
-                  className={`py-2 px-1 text-center rounded-xl text-xs font-bold transition-all border ${
-                    currentDisplayCount === maxPossiblePhotos
-                      ? 'bg-emerald-600 border-emerald-400 text-white shadow-lg ring-2 ring-emerald-400/40 scale-102'
-                      : 'bg-emerald-950/40 border-emerald-500/30 hover:bg-emerald-900/50 text-emerald-300'
-                  }`}
-                  title="Fill entire paper sheet with maximum photos"
-                >
-                  <div className="text-sm font-black">{maxPossiblePhotos}</div>
-                  <div className="text-[9px] opacity-90 font-medium">Fill Max</div>
-                </button>
+            {/* Custom Quantity Control (Spacious & Clean Space-Saver) */}
+            <div className="p-4 bg-black/40 rounded-xl border border-white/10 flex items-center justify-between gap-4 flex-wrap">
+              <div>
+                <span className="text-xs sm:text-sm font-semibold text-slate-200 block">
+                  Custom Quantity:
+                </span>
+                <span className="text-[11px] text-slate-400">
+                  Select exact copies (1 to {maxPossiblePhotos} photos)
+                </span>
               </div>
-            </div>
-
-            {/* Big Tactile Stepper & Custom Number Input */}
-            <div className="p-3 bg-black/40 rounded-xl border border-white/10 flex items-center justify-between gap-4">
-              <span className="text-xs font-semibold text-slate-300">
-                Custom Quantity:
-              </span>
 
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setPhotoQuantity(currentDisplayCount - 1)}
                   disabled={currentDisplayCount <= 1}
-                  className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-20 text-white flex items-center justify-center transition-colors font-bold text-base"
+                  className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 disabled:opacity-20 text-white flex items-center justify-center transition-colors font-bold text-base"
                   title="Subtract 1 photo"
                 >
                   <Minus className="w-4 h-4" />
@@ -1576,13 +1528,13 @@ export const PassportStudio: React.FC<PassportStudioProps> = () => {
                       setPhotoQuantity(val);
                     }
                   }}
-                  className="w-16 text-center py-1 bg-black/60 border border-blue-500/50 rounded-lg text-sm font-bold text-white font-mono focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  className="w-18 text-center py-1.5 bg-black/60 border border-blue-500/50 rounded-xl text-sm font-bold text-white font-mono focus:outline-none focus:ring-2 focus:ring-blue-400"
                 />
 
                 <button
                   onClick={() => setPhotoQuantity(currentDisplayCount + 1)}
                   disabled={currentDisplayCount >= maxPossiblePhotos}
-                  className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-20 text-white flex items-center justify-center transition-colors font-bold text-base"
+                  className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 disabled:opacity-20 text-white flex items-center justify-center transition-colors font-bold text-base"
                   title="Add 1 photo"
                 >
                   <Plus className="w-4 h-4" />
@@ -1662,6 +1614,15 @@ export const PassportStudio: React.FC<PassportStudioProps> = () => {
                 >
                   <Printer className="w-4 h-4 text-blue-400" />
                   Print Direct
+                </button>
+                <button
+                  id="save-as-jpg-passport-btn"
+                  onClick={handleDownloadJPG}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-md shadow-emerald-600/20"
+                  title="Save 300 DPI high-resolution photo sheet as JPG image"
+                >
+                  <FileImage className="w-4 h-4" />
+                  Save as JPG
                 </button>
                 <button
                   onClick={handleDownloadPDF}

@@ -199,13 +199,15 @@ export interface DocumentItem {
   id: string;
   title: string;
   dataUrl: string;
-  filterMode: 'original' | 'magic_color' | 'grayscale' | 'bw_photocopy' | 'invert';
+  filterMode: 'original' | 'magic_color' | 'light_text' | 'grayscale' | 'bw_photocopy' | 'invert';
   rotation: number;
   brightness: number;
   contrast: number;
   cropBox?: { x: number; y: number; width: number; height: number };
   quadCorners?: QuadCorners; // 4-corner perspective crop
   scalePercent: number;
+  textDarkness?: number; // 0 to 100 for light text enhancement intensity
+  enhanceText?: boolean;
 }
 
 export interface DocumentSettings {

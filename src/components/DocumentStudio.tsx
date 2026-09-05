@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { DocumentItem, DocumentSettings, PaperSizeConfig } from '../types';
 import { PAPER_SIZES } from '../data/presets';
-import { processDocumentItem, exportToPDF } from '../utils/imageProcessing';
+import { processDocumentItem, exportToPDF, exportToJPG } from '../utils/imageProcessing';
 import { DocumentCropModal } from './DocumentCropModal';
 import { BackgroundRemovalModal } from './BackgroundRemovalModal';
 import {
@@ -10,6 +10,7 @@ import {
   Camera,
   Printer,
   Download,
+  FileImage,
   RotateCw,
   RotateCcw,
   Sparkles,
@@ -231,6 +232,7 @@ export const DocumentStudio: React.FC = () => {
     currentDoc?.filterMode,
     currentDoc?.brightness,
     currentDoc?.contrast,
+    currentDoc?.textDarkness,
   ]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -338,6 +340,42 @@ export const DocumentStudio: React.FC = () => {
 
         ctx.drawImage(img, drawX, drawY, drawW, drawH);
         exportToPDF(canvas, selectedPaper, `${currentDoc.title}_print_${selectedPaper.id}.pdf`);
+        confetti({ particleCount: 30, spread: 50, origin: { y: 0.8 } });
+      }
+    };
+  };
+
+  // Save Document Sheet as High-Res JPG
+  const handleDownloadJPG = async () => {
+    if (!currentDoc) return;
+    const processedUrl = await processDocumentItem(currentDoc);
+    const canvas = document.createElement('canvas');
+    const img = new Image();
+    img.src = processedUrl;
+    img.onload = () => {
+      canvas.width = (selectedPaper.widthMm / 25.4) * 300;
+      canvas.height = (selectedPaper.heightMm / 25.4) * 300;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        const imgAspect = img.width / img.height;
+        const paperAspect = canvas.width / canvas.height;
+        let drawW = canvas.width;
+        let drawH = canvas.height;
+        let drawX = 0;
+        let drawY = 0;
+
+        if (imgAspect > paperAspect) {
+          drawH = canvas.width / imgAspect;
+          drawY = (canvas.height - drawH) / 2;
+        } else {
+          drawW = canvas.height * imgAspect;
+          drawX = (canvas.width - drawW) / 2;
+        }
+
+        ctx.drawImage(img, drawX, drawY, drawW, drawH);
+        exportToJPG(canvas, `${currentDoc.title}_${selectedPaper.id}.jpg`);
         confetti({ particleCount: 30, spread: 50, origin: { y: 0.8 } });
       }
     };
@@ -525,6 +563,55 @@ export const DocumentStudio: React.FC = () => {
                 </button>
               </div>
 
+              {/* Quick Action: Light Text / Blurry Document Enhancer */}
+              <button
+                id="doc-quick-light-text-btn"
+                type="button"
+                onClick={() =>
+                  updateCurrentDoc({
+                    filterMode: 'light_text',
+                    textDarkness: currentDoc.textDarkness ?? 65,
+                  })
+                }
+                className={`w-full p-3 rounded-xl border text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${
+                  currentDoc.filterMode === 'light_text'
+                    ? 'bg-amber-500/20 border-amber-400 text-amber-100 ring-2 ring-amber-400/40 shadow-lg shadow-amber-950/20'
+                    : 'bg-slate-800/80 hover:bg-slate-800 border-amber-500/30 hover:border-amber-400/60 text-slate-200'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <div
+                    className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                      currentDoc.filterMode === 'light_text'
+                        ? 'bg-amber-500 text-slate-950 font-black shadow'
+                        : 'bg-amber-500/20 text-amber-300'
+                    }`}
+                  >
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                  <div className="text-left">
+                    <div className="flex items-center gap-1.5 font-bold">
+                      Light Text Recovery
+                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/30 text-amber-200 uppercase font-mono tracking-wide border border-amber-400/40">
+                        Blurry Text
+                      </span>
+                    </div>
+                    <div className="text-[11px] font-normal text-slate-400 mt-0.5">
+                      Sharpens blurry text &amp; restores faint ink for low-quality docs
+                    </div>
+                  </div>
+                </div>
+                <span
+                  className={`text-[10px] px-2.5 py-1 rounded-lg font-bold shrink-0 ${
+                    currentDoc.filterMode === 'light_text'
+                      ? 'bg-amber-500 text-slate-950'
+                      : 'bg-white/10 text-slate-300'
+                  }`}
+                >
+                  {currentDoc.filterMode === 'light_text' ? 'Active' : 'Apply'}
+                </span>
+              </button>
+
               <div className="flex items-center gap-2 pt-1">
                 <button
                   onClick={handleRotate}
@@ -547,6 +634,13 @@ export const DocumentStudio: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-2">
                 {[
+                  {
+                    id: 'light_text',
+                    title: 'Light Text',
+                    desc: 'Enhances blurry, faint & low-quality text',
+                    badge: 'Blurry Scans',
+                    highlight: true,
+                  },
                   {
                     id: 'magic_color',
                     title: 'Magic Color Boost',
@@ -571,16 +665,136 @@ export const DocumentStudio: React.FC = () => {
                   <button
                     key={flt.id}
                     onClick={() => updateCurrentDoc({ filterMode: flt.id as any })}
-                    className={`p-2.5 rounded-xl border text-left text-xs transition-all ${
+                    className={`p-2.5 rounded-xl border text-left text-xs transition-all relative ${
                       currentDoc.filterMode === flt.id
-                        ? 'border-purple-500/60 bg-purple-500/15 text-white font-semibold ring-1 ring-purple-500/30'
+                        ? flt.id === 'light_text'
+                          ? 'border-amber-400 bg-amber-500/15 text-white font-semibold ring-2 ring-amber-400/40 shadow-sm'
+                          : 'border-purple-500/60 bg-purple-500/15 text-white font-semibold ring-1 ring-purple-500/30'
+                        : flt.id === 'light_text'
+                        ? 'border-amber-500/30 bg-amber-500/5 hover:bg-amber-500/10 text-slate-200'
                         : 'border-white/10 hover:bg-white/5 text-slate-300'
                     }`}
                   >
-                    <div className="font-semibold text-slate-200">{flt.title}</div>
-                    <div className="text-[10px] text-slate-400">{flt.desc}</div>
+                    <div className="flex items-center justify-between">
+                      <div className="font-semibold text-slate-200 flex items-center gap-1.5">
+                        {flt.title}
+                      </div>
+                      {flt.badge && (
+                        <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-amber-500/30 text-amber-200 border border-amber-400/40 uppercase">
+                          {flt.badge}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">{flt.desc}</div>
                   </button>
                 ))}
+              </div>
+
+              {/* Light Text Fine-Tuning Controls */}
+              {currentDoc.filterMode === 'light_text' && (
+                <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-3 animate-fade-in">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-amber-200">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                      Text Darkening &amp; Sharpness Boost
+                    </div>
+                    <span className="text-xs font-mono font-bold text-amber-300 bg-amber-500/20 px-2 py-0.5 rounded border border-amber-500/30">
+                      {currentDoc.textDarkness ?? 65}%
+                    </span>
+                  </div>
+
+                  <input
+                    type="range"
+                    min={20}
+                    max={100}
+                    step={5}
+                    value={currentDoc.textDarkness ?? 65}
+                    onChange={(e) => updateCurrentDoc({ textDarkness: Number(e.target.value) })}
+                    className="w-full accent-amber-400 cursor-pointer"
+                  />
+
+                  {/* Presets */}
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {[
+                      { label: 'Subtle', val: 40, desc: 'Mild blur' },
+                      { label: 'Balanced', val: 65, desc: 'Standard' },
+                      { label: 'Deep Ink', val: 90, desc: 'Very faint' },
+                    ].map((pst) => (
+                      <button
+                        key={pst.val}
+                        type="button"
+                        onClick={() => updateCurrentDoc({ textDarkness: pst.val })}
+                        className={`px-2 py-1.5 rounded-lg text-[11px] font-semibold border transition-all text-center ${
+                          (currentDoc.textDarkness ?? 65) === pst.val
+                            ? 'bg-amber-500 text-slate-950 font-bold border-amber-400 shadow-sm'
+                            : 'bg-slate-900/80 hover:bg-slate-800 text-slate-300 border-white/10'
+                        }`}
+                      >
+                        <div>{pst.label} ({pst.val}%)</div>
+                        <div className="text-[9px] opacity-75 font-normal">{pst.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="text-[11px] text-amber-300/80 flex items-start gap-1.5 bg-amber-950/40 p-2 rounded-lg border border-amber-500/20">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                    <span>
+                      High-frequency unsharp mask sharpens blurry character contours, wipes scanner fog to crisp white, and deepens washed-out text.
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Optional Fine Exposure / Brightness / Contrast */}
+              <div className="pt-2 border-t border-white/10 space-y-2">
+                <div className="flex items-center justify-between text-[11px] text-slate-400">
+                  <span className="flex items-center gap-1 font-semibold text-slate-300">
+                    <Sliders className="w-3 h-3 text-purple-400" /> Manual Brightness &amp; Contrast
+                  </span>
+                  {(currentDoc.brightness !== 0 || currentDoc.contrast !== 0) && (
+                    <button
+                      type="button"
+                      onClick={() => updateCurrentDoc({ brightness: 0, contrast: 0 })}
+                      className="text-pink-400 hover:underline cursor-pointer"
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-[11px]">
+                  <div>
+                    <div className="flex justify-between text-slate-400 mb-1">
+                      <span>Brightness</span>
+                      <span className="font-mono text-slate-200">
+                        {currentDoc.brightness > 0 ? `+${currentDoc.brightness}` : currentDoc.brightness}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={-50}
+                      max={50}
+                      value={currentDoc.brightness}
+                      onChange={(e) => updateCurrentDoc({ brightness: Number(e.target.value) })}
+                      className="w-full accent-purple-400 cursor-pointer"
+                    />
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-slate-400 mb-1">
+                      <span>Contrast</span>
+                      <span className="font-mono text-slate-200">
+                        {currentDoc.contrast > 0 ? `+${currentDoc.contrast}` : currentDoc.contrast}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={-50}
+                      max={50}
+                      value={currentDoc.contrast}
+                      onChange={(e) => updateCurrentDoc({ contrast: Number(e.target.value) })}
+                      className="w-full accent-purple-400 cursor-pointer"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -619,8 +833,17 @@ export const DocumentStudio: React.FC = () => {
                   Document Preview ({selectedPaper.name})
                 </span>
                 {currentDoc && (
-                  <span className="text-xs bg-purple-500/20 text-purple-300 border border-purple-500/30 font-medium px-2.5 py-0.5 rounded-full">
-                    {currentDoc.filterMode.replace('_', ' ').toUpperCase()}
+                  <span
+                    className={`text-xs border font-medium px-2.5 py-0.5 rounded-full flex items-center gap-1.5 ${
+                      currentDoc.filterMode === 'light_text'
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-400/40 font-bold'
+                        : 'bg-purple-500/20 text-purple-300 border-purple-500/30'
+                    }`}
+                  >
+                    {currentDoc.filterMode === 'light_text' && <Sparkles className="w-3 h-3 text-amber-400" />}
+                    {currentDoc.filterMode === 'light_text'
+                      ? 'LIGHT TEXT (ENHANCED)'
+                      : currentDoc.filterMode.replace('_', ' ').toUpperCase()}
                   </span>
                 )}
                 {currentDoc?.cropBox && (
@@ -630,7 +853,7 @@ export const DocumentStudio: React.FC = () => {
                 )}
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <button
                   onClick={() => setIsCropModalOpen(true)}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 text-xs font-semibold transition-all"
@@ -644,6 +867,15 @@ export const DocumentStudio: React.FC = () => {
                 >
                   <Printer className="w-3.5 h-3.5 text-slate-300" />
                   Print Direct
+                </button>
+                <button
+                  id="save-as-jpg-document-btn"
+                  onClick={handleDownloadJPG}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-md transition-all"
+                  title="Save document as high-resolution JPG image"
+                >
+                  <FileImage className="w-3.5 h-3.5" />
+                  Save as JPG
                 </button>
                 <button
                   onClick={handleDownloadPDF}

@@ -1049,8 +1049,83 @@ export async function processDocumentItem(doc: DocumentItem): Promise<string> {
   // Filters
   const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const data = imgData.data;
+  const w = canvas.width;
+  const h = canvas.height;
 
-  if (doc.filterMode === 'bw_photocopy') {
+  if (doc.filterMode === 'light_text') {
+    // "Light Text" mode specifically designed for low quality documents with blurry, faded or faint text:
+    // 1. High-frequency unsharp mask sharpening to eliminate edge blur around characters
+    // 2. Adaptive background whitening to eliminate shadows, yellowing, and scanner fog
+    // 3. Non-linear text darkening to restore faded/light ink into rich, readable dark characters
+    // 4. Color hue preservation for colored signatures (blue ink) and official stamps (red/purple)
+    const src = new Uint8ClampedArray(data);
+    const darknessStrength = Math.min(100, Math.max(0, doc.textDarkness ?? 65)) / 100;
+    const sharpenFactor = 0.55 + darknessStrength * 0.45; // 0.55 - 1.0
+    const bgThreshold = 195; // threshold above which pixels are considered paper background
+
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const idx = (y * w + x) * 4;
+
+        let rSharp = src[idx];
+        let gSharp = src[idx + 1];
+        let bSharp = src[idx + 2];
+
+        // 3x3 Laplacian sharpening on blurry document edges
+        if (x > 0 && x < w - 1 && y > 0 && y < h - 1) {
+          const up = ((y - 1) * w + x) * 4;
+          const down = ((y + 1) * w + x) * 4;
+          const left = (y * w + (x - 1)) * 4;
+          const right = (y * w + (x + 1)) * 4;
+
+          const lapR = (src[up] + src[down] + src[left] + src[right]) * 0.25;
+          const lapG = (src[up + 1] + src[down + 1] + src[left + 1] + src[right + 1]) * 0.25;
+          const lapB = (src[up + 2] + src[down + 2] + src[left + 2] + src[right + 2]) * 0.25;
+
+          rSharp = src[idx] + (src[idx] - lapR) * sharpenFactor;
+          gSharp = src[idx + 1] + (src[idx + 1] - lapG) * sharpenFactor;
+          bSharp = src[idx + 2] + (src[idx + 2] - lapB) * sharpenFactor;
+
+          rSharp = Math.max(0, Math.min(255, rSharp));
+          gSharp = Math.max(0, Math.min(255, gSharp));
+          bSharp = Math.max(0, Math.min(255, bSharp));
+        }
+
+        const lum = 0.299 * rSharp + 0.587 * gSharp + 0.114 * bSharp;
+
+        if (lum >= bgThreshold) {
+          // Clean paper background: push toward pure white to eliminate dirty scan haze & shadows
+          const bgVal = Math.min(255, lum + (255 - lum) * 0.88);
+          data[idx] = bgVal;
+          data[idx + 1] = bgVal;
+          data[idx + 2] = bgVal;
+        } else {
+          // Text / ink strokes: deepen faded and light blurry characters into crisp, high-contrast dark text
+          const norm = Math.max(0, lum / bgThreshold); // 0 to 1
+          const power = 1.6 + darknessStrength * 1.4; // 1.6 to 3.0 power curve
+          const targetLum = Math.pow(norm, power) * 150;
+
+          // Check if ink has noticeable color (e.g. blue pen ink, red official stamp)
+          const maxC = Math.max(rSharp, gSharp, bSharp);
+          const minC = Math.min(rSharp, gSharp, bSharp);
+          const isColored = (maxC - minC) > 22 && lum > 35;
+
+          if (isColored) {
+            const ratio = lum > 0 ? targetLum / lum : 0;
+            data[idx] = Math.max(0, Math.min(255, rSharp * ratio));
+            data[idx + 1] = Math.max(0, Math.min(255, gSharp * ratio));
+            data[idx + 2] = Math.max(0, Math.min(255, bSharp * ratio));
+          } else {
+            // Neutral text: crisp dark charcoal / black
+            data[idx] = Math.max(0, Math.min(255, targetLum));
+            data[idx + 1] = Math.max(0, Math.min(255, targetLum));
+            data[idx + 2] = Math.max(0, Math.min(255, targetLum));
+          }
+        }
+      }
+    }
+    ctx.putImageData(imgData, 0, 0);
+  } else if (doc.filterMode === 'bw_photocopy') {
     // High contrast black and white text photocopy filter
     for (let i = 0; i < data.length; i += 4) {
       const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
@@ -1077,6 +1152,20 @@ export async function processDocumentItem(doc: DocumentItem): Promise<string> {
       data[i + 2] = gray;
     }
     ctx.putImageData(imgData, 0, 0);
+  }
+
+  // Apply user brightness and contrast if adjusted
+  if ((doc.brightness && doc.brightness !== 0) || (doc.contrast && doc.contrast !== 0)) {
+    const postData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const d = postData.data;
+    const factor = (259 * ((doc.contrast || 0) + 255)) / (255 * (259 - (doc.contrast || 0)));
+    const brightOffset = ((doc.brightness || 0) / 100) * 255;
+    for (let i = 0; i < d.length; i += 4) {
+      d[i] = Math.min(255, Math.max(0, factor * (d[i] - 128) + 128 + brightOffset));
+      d[i + 1] = Math.min(255, Math.max(0, factor * (d[i + 1] - 128) + 128 + brightOffset));
+      d[i + 2] = Math.min(255, Math.max(0, factor * (d[i + 2] - 128) + 128 + brightOffset));
+    }
+    ctx.putImageData(postData, 0, 0);
   }
 
   return canvas.toDataURL('image/jpeg', 0.95);
@@ -1126,3 +1215,21 @@ export async function exportDuplexIDCardPDF(
 
   pdf.save(filename);
 }
+
+/**
+ * Export Canvas directly as high-resolution JPEG (JPG) image
+ */
+export function exportToJPG(
+  canvas: HTMLCanvasElement,
+  filename: string = 'studio_export.jpg',
+  quality: number = 0.98
+): void {
+  const dataUrl = canvas.toDataURL('image/jpeg', quality);
+  const link = document.createElement('a');
+  link.download = filename.endsWith('.jpg') || filename.endsWith('.jpeg') ? filename : `${filename}.jpg`;
+  link.href = dataUrl;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+

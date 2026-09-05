@@ -58,9 +58,9 @@ export const IDCardCropModal: React.FC<IDCardCropModalProps> = ({
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const sourceImageRef = useRef<HTMLImageElement | null>(null);
 
-  const targetWidth = preset.id === 'dl_custom' ? customWidthMm : preset.widthMm;
-  const targetHeight = preset.id === 'dl_custom' ? customHeightMm : preset.heightMm;
-  const presetAspectRatio = targetWidth / targetHeight; // ~1.585 for CR-80 (85.60 x 54.00 mm)
+  const targetWidth = customWidthMm || (preset.id === 'dl_custom' ? customWidthMm : preset.widthMm);
+  const targetHeight = customHeightMm || (preset.id === 'dl_custom' ? customHeightMm : preset.heightMm);
+  const presetAspectRatio = targetWidth / targetHeight;
 
   const [engineMode, setEngineMode] = useState<CropEngineMode>('box');
   const [isFreeform, setIsFreeform] = useState(false);
@@ -436,6 +436,31 @@ export const IDCardCropModal: React.FC<IDCardCropModalProps> = ({
     };
   }, [isDragging, handleMouseMove, handleMouseUp]);
 
+  const handleConfirmCrop = useCallback(() => {
+    if (engineMode === 'quad') {
+      onApplyCrop(cropBox, corners);
+    } else {
+      onApplyCrop(cropBox, undefined);
+    }
+    onClose();
+  }, [engineMode, cropBox, corners, onApplyCrop, onClose]);
+
+  // Keyboard shortcut: Enter to confirm crop, Escape to close
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleConfirmCrop();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, handleConfirmCrop, onClose]);
+
   if (!isOpen) return null;
 
   return (
@@ -469,16 +494,29 @@ export const IDCardCropModal: React.FC<IDCardCropModalProps> = ({
 
           <div className="flex items-center gap-2">
             <button
+              id="idcard-header-confirm-crop-btn"
+              type="button"
+              onClick={handleConfirmCrop}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs sm:text-sm font-bold shadow-lg shadow-emerald-950/50 transition-all hover:scale-[1.02] active:scale-95 border border-emerald-400/40 cursor-pointer"
+              title="Confirm and apply crop (Enter)"
+            >
+              <Check className="w-4 h-4" />
+              Confirm Crop
+            </button>
+            <button
+              type="button"
               onClick={handleResetToStandardSize}
               className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition-all hover:scale-[1.02] active:scale-95"
               title="Reset the crop box to standard 85.60 mm × 54.00 mm dimensions"
             >
               <RotateCcw className="w-3.5 h-3.5 text-emerald-400" />
-              Reset to Standard Size ({targetWidth.toFixed(2)} × {targetHeight.toFixed(2)} mm)
+              Reset Size
             </button>
             <button
+              type="button"
               onClick={onClose}
               className="p-2 text-slate-400 hover:text-white rounded-full hover:bg-slate-800 transition-colors"
+              title="Cancel (Esc)"
             >
               <X className="w-5 h-5" />
             </button>
@@ -625,7 +663,7 @@ export const IDCardCropModal: React.FC<IDCardCropModalProps> = ({
             </div>
 
             {/* Workspace: Interactive Image Canvas + Controls + Real-Time Live Preview */}
-            <div className="flex-1 flex flex-col lg:flex-row overflow-hidden min-h-[380px] max-h-[580px]">
+            <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden">
               {/* Visual Canvas Area */}
               <div className="flex-1 bg-slate-950 p-4 flex items-center justify-center overflow-hidden relative select-none">
                 <div
@@ -764,11 +802,24 @@ export const IDCardCropModal: React.FC<IDCardCropModalProps> = ({
 
                 {/* Reset to Standard Size Button */}
                 <button
+                  type="button"
                   onClick={handleResetToStandardSize}
                   className="w-full py-2 px-3 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 text-xs font-bold border border-emerald-500/30 flex items-center justify-center gap-2 transition-all hover:scale-[1.01] active:scale-98 shadow-sm"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
                   Reset to Standard Size ({targetWidth.toFixed(2)} × {targetHeight.toFixed(2)} mm)
+                </button>
+
+                {/* Primary Confirm Crop Button in Sidebar */}
+                <button
+                  id="idcard-sidebar-confirm-crop-btn"
+                  type="button"
+                  onClick={handleConfirmCrop}
+                  className="w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs sm:text-sm font-bold border border-emerald-400/50 flex items-center justify-center gap-2 transition-all hover:scale-[1.01] active:scale-98 shadow-md shadow-emerald-950/50"
+                  title="Confirm and apply crop (Enter)"
+                >
+                  <Check className="w-4 h-4" />
+                  Confirm Crop
                 </button>
 
                 {/* Position Nudge Controls */}
@@ -839,8 +890,8 @@ export const IDCardCropModal: React.FC<IDCardCropModalProps> = ({
           </>
         )}
 
-        {/* Footer Confirmation Bar */}
-        <div className="px-5 py-3.5 bg-slate-950 border-t border-slate-800 flex items-center justify-between flex-wrap gap-3">
+        {/* Footer Confirmation Bar (Always Sticky & Never Clipped) */}
+        <div className="px-5 py-3.5 bg-slate-950 border-t border-slate-800 flex items-center justify-between flex-wrap gap-3 sticky bottom-0 z-20 shrink-0">
           <div className="text-xs text-slate-400 flex items-center gap-2">
             {engineMode === 'quad' ? (
               <>
@@ -861,21 +912,18 @@ export const IDCardCropModal: React.FC<IDCardCropModalProps> = ({
 
           <div className="flex items-center gap-2.5">
             <button
+              type="button"
               onClick={onClose}
               className="px-4 py-2 text-xs font-semibold text-slate-300 bg-slate-800 hover:bg-slate-700 rounded-xl transition-colors"
             >
               Cancel
             </button>
             <button
-              onClick={() => {
-                if (engineMode === 'quad') {
-                  onApplyCrop(cropBox, corners);
-                } else {
-                  onApplyCrop(cropBox, undefined);
-                }
-                onClose();
-              }}
-              className="inline-flex items-center gap-2 px-6 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl shadow-lg shadow-emerald-950/50 transition-all hover:scale-[1.02] active:scale-95 border border-emerald-400/40"
+              id="idcard-footer-confirm-crop-btn"
+              type="button"
+              onClick={handleConfirmCrop}
+              className="inline-flex items-center gap-2 px-6 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl shadow-lg shadow-emerald-950/50 transition-all hover:scale-[1.02] active:scale-95 border border-emerald-400/40 cursor-pointer"
+              title="Confirm and apply crop (Enter)"
             >
               <Check className="w-4 h-4" />
               Confirm Crop
