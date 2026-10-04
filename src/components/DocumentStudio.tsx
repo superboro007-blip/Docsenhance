@@ -4,6 +4,7 @@ import { PAPER_SIZES } from '../data/presets';
 import { processDocumentItem, exportToPDF, exportToJPG } from '../utils/imageProcessing';
 import { DocumentCropModal } from './DocumentCropModal';
 import { BackgroundRemovalModal } from './BackgroundRemovalModal';
+import { PrinterScannerModal, ScannedDocumentResult } from './PrinterScannerModal';
 import {
   FileText,
   Upload,
@@ -96,6 +97,7 @@ export const DocumentStudio: React.FC = () => {
   const [selectedPaper, setSelectedPaper] = useState<PaperSizeConfig>(PAPER_SIZES[0]); // A4
   const [isCropModalOpen, setIsCropModalOpen] = useState(false);
   const [isBgRemovalOpen, setIsBgRemovalOpen] = useState(false);
+  const [isScannerModalOpen, setIsScannerModalOpen] = useState(false);
   const [processedDocUrl, setProcessedDocUrl] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -111,6 +113,25 @@ export const DocumentStudio: React.FC = () => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const currentDoc = documents[selectedDocIndex] || documents[0];
+
+  // Callback when document is scanned from printer / hardware scanner
+  const handleScanComplete = (scannedDataUrl: string, metadata: ScannedDocumentResult) => {
+    const newDocIndex = documents.length;
+    const newDoc: DocumentItem = {
+      id: `doc-scan-${Date.now()}`,
+      title: metadata.title || `Printer Scan ${newDocIndex + 1}`,
+      dataUrl: scannedDataUrl,
+      // If user enabled autoLightText in scanner, apply light_text filter right away!
+      filterMode: metadata.autoLightTextApplied ? 'light_text' : 'magic_color',
+      rotation: 0,
+      brightness: 0,
+      contrast: 0,
+      scalePercent: 100,
+      textDarkness: metadata.autoLightTextApplied ? 65 : undefined,
+    };
+    setDocuments((prev) => [...prev, newDoc]);
+    setSelectedDocIndex(newDocIndex);
+  };
 
   // Helper to load multiple files
   const processFiles = (files: FileList | File[]) => {
@@ -429,10 +450,18 @@ export const DocumentStudio: React.FC = () => {
             className="hidden"
           />
           <button
-            onClick={() => fileInputRef.current?.click()}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold shadow-lg transition-all"
+            onClick={() => setIsScannerModalOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold shadow-lg shadow-purple-950/40 transition-all border border-purple-400/40"
+            title="Scan physical document or certificate directly from your printer / scanner"
           >
-            <Upload className="w-4 h-4" />
+            <Printer className="w-4 h-4 text-purple-200" />
+            Scan from Printer
+          </button>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-slate-200 text-sm font-semibold border border-white/15 transition-all"
+          >
+            <Upload className="w-4 h-4 text-slate-300" />
             Upload Document Scan
           </button>
         </div>
@@ -442,37 +471,64 @@ export const DocumentStudio: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Left Controls (5 Cols) */}
         <div className="lg:col-span-5 space-y-5">
-          {/* Dedicated Drag & Drop Dropzone */}
-          <div
-            onClick={() => fileInputRef.current?.click()}
-            className="border-2 border-dashed border-purple-500/30 hover:border-purple-400/60 bg-purple-500/5 hover:bg-purple-500/10 rounded-2xl p-4 text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-2 group"
-          >
-            <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 group-hover:scale-110 transition-transform">
-              <Upload className="w-5 h-5" />
+          {/* Dedicated Drag & Drop Dropzone with Scan from Printer Quick Action */}
+          <div className="space-y-2">
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              className="border-2 border-dashed border-purple-500/30 hover:border-purple-400/60 bg-purple-500/5 hover:bg-purple-500/10 rounded-2xl p-4 text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-2 group"
+            >
+              <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 group-hover:scale-110 transition-transform">
+                <Upload className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-xs font-bold text-purple-300 block">
+                  Drag & Drop Document Images Here
+                </span>
+                <span className="text-[11px] text-purple-400/80 block mt-0.5">
+                  Supports single or multiple files, phone camera scans, and certificates (or click to browse)
+                </span>
+              </div>
             </div>
-            <div>
-              <span className="text-xs font-bold text-purple-300 block">
-                Drag & Drop Document Images Here
+
+            {/* Quick Scan From Printer Banner */}
+            <button
+              type="button"
+              onClick={() => setIsScannerModalOpen(true)}
+              className="w-full p-2.5 rounded-xl bg-purple-950/30 hover:bg-purple-900/40 border border-purple-500/30 hover:border-purple-500/60 text-purple-200 text-xs font-bold flex items-center justify-between transition-all group"
+            >
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-lg bg-purple-500/20 flex items-center justify-center text-purple-300 group-hover:scale-110 transition-transform">
+                  <Printer className="w-3.5 h-3.5" />
+                </div>
+                <span>Have a Physical Scanner? <strong>Scan from Printer</strong></span>
+              </div>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 font-semibold">
+                Network &amp; USB
               </span>
-              <span className="text-[11px] text-purple-400/80 block mt-0.5">
-                Supports single or multiple files, phone camera scans, and certificates (or click to browse)
-              </span>
-            </div>
+            </button>
           </div>
 
           {/* Document Queue List */}
           <div className="glass-card rounded-2xl p-5 border border-white/10 shadow-lg space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <h2 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
                 <FileText className="w-4 h-4 text-purple-400" />
                 Uploaded Documents ({documents.length})
               </h2>
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="text-xs text-purple-400 font-semibold hover:underline flex items-center gap-1"
-              >
-                <Plus className="w-3.5 h-3.5" /> Add More
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setIsScannerModalOpen(true)}
+                  className="text-xs text-purple-300 font-semibold hover:text-white flex items-center gap-1 transition-colors"
+                >
+                  <Printer className="w-3.5 h-3.5 text-purple-400" /> Scan from Printer
+                </button>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="text-xs text-purple-400 font-semibold hover:underline flex items-center gap-1"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add More
+                </button>
+              </div>
             </div>
 
             <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
@@ -944,6 +1000,15 @@ export const DocumentStudio: React.FC = () => {
           }}
         />
       )}
+
+      {/* Hardware Printer & Document Scanner Modal */}
+      <PrinterScannerModal
+        isOpen={isScannerModalOpen}
+        onClose={() => setIsScannerModalOpen(false)}
+        onScanComplete={handleScanComplete}
+        targetContext="document"
+        title="Scan Document from Printer / Scanner"
+      />
     </div>
   );
 };

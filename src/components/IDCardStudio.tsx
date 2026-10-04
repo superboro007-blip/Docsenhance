@@ -35,6 +35,7 @@ import { BackgroundRemovalModal } from './BackgroundRemovalModal';
 import { PdfPasswordModal } from './PdfPasswordModal';
 import { PdfCardResultModal } from './PdfCardResultModal';
 import { IDCardOrientationModal } from './IDCardOrientationModal';
+import { PrinterScannerModal, ScannedDocumentResult } from './PrinterScannerModal';
 import {
   Upload,
   Camera,
@@ -138,9 +139,50 @@ export const IDCardStudio: React.FC = () => {
   const [activeCropSide, setActiveCropSide] = useState<'front' | 'back' | null>(null);
   const [bgRemovalSide, setBgRemovalSide] = useState<'front' | 'back' | null>(null);
   const [webcamMode, setWebcamMode] = useState<'idcard_front' | 'idcard_back' | null>(null);
+  const [scannerSide, setScannerSide] = useState<'auto' | 'front' | 'back' | null>(null);
   const [isAiDetecting, setIsAiDetecting] = useState(false);
   const [aiDetectNotification, setAiDetectNotification] = useState<string | null>(null);
   const [isOrientationModalOpen, setIsOrientationModalOpen] = useState(false);
+
+  // Handle scanned image from printer
+  const handleScannerComplete = (scannedDataUrl: string, metadata: ScannedDocumentResult) => {
+    const cardItem: IDCardItem = {
+      id: `card-scan-${Date.now()}`,
+      side: scannerSide === 'back' ? 'back' : 'front',
+      dataUrl: scannedDataUrl,
+      fileName: metadata.title || 'Printer Scanned Card',
+      rotation: 0,
+      brightness: 0,
+      contrast: 0,
+      saturation: 0,
+      sharpness: metadata.autoLightTextApplied ? 40 : 0,
+      detectedSide: scannerSide === 'back' ? 'back' : 'front',
+      detectedConfidence: 0.95,
+      detectedSummary: `Scanned from Hardware Printer (${metadata.resolutionDpi} DPI)`,
+      isAmbiguous: false,
+    };
+
+    if (scannerSide === 'back') {
+      setBackCard(cardItem);
+      setAiDetectNotification('✓ Scanned Back Card assigned from printer');
+    } else if (scannerSide === 'front') {
+      setFrontCard(cardItem);
+      setAiDetectNotification('✓ Scanned Front Card assigned from printer');
+    } else {
+      // Auto mode
+      if (!frontCard) {
+        setFrontCard({ ...cardItem, side: 'front' });
+        setAiDetectNotification('✓ Scanned Front Card assigned');
+      } else if (!backCard) {
+        setBackCard({ ...cardItem, side: 'back', detectedSide: 'back' });
+        setAiDetectNotification('✓ Scanned Back Card assigned');
+      } else {
+        setFrontCard({ ...cardItem, side: 'front' });
+        setAiDetectNotification('✓ Replaced Front Card with new scan');
+      }
+    }
+    setTimeout(() => setAiDetectNotification(null), 3000);
+  };
 
   // Render state
   const [isRendering, setIsRendering] = useState(false);
@@ -986,17 +1028,28 @@ export const IDCardStudio: React.FC = () => {
         <div className="lg:col-span-5 space-y-5">
           {/* Card 1: Upload Area */}
           <div className="glass-card rounded-2xl p-5 border border-white/10 shadow-lg space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <h2 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
                 <CreditCard className="w-4 h-4 text-emerald-400" />
                 1. Upload PDF or Images (Front & Back)
               </h2>
-              {pdfIsProcessing && (
-                <span className="text-xs text-emerald-400 font-medium flex items-center gap-1 animate-pulse">
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  Rendering PDF in 300 DPI...
-                </span>
-              )}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setScannerSide('auto')}
+                  className="px-2.5 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-semibold flex items-center gap-1.5 transition-all"
+                  title="Scan physical ID card from flatbed scanner"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  Scan from Printer
+                </button>
+                {pdfIsProcessing && (
+                  <span className="text-xs text-emerald-400 font-medium flex items-center gap-1 animate-pulse">
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    Rendering PDF in 300 DPI...
+                  </span>
+                )}
+              </div>
             </div>
 
             {/* Smart Dual/Auto Upload Dropzone */}
@@ -1174,6 +1227,13 @@ export const IDCardStudio: React.FC = () => {
                   >
                     <Camera className="w-3.5 h-3.5" />
                   </button>
+                  <button
+                    onClick={() => setScannerSide('front')}
+                    className="p-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-300 text-[11px]"
+                    title="Scan Front ID Card from Printer / Scanner"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                  </button>
                   {frontCard && (
                     <>
                       <button
@@ -1293,6 +1353,13 @@ export const IDCardStudio: React.FC = () => {
                     title="Camera capture"
                   >
                     <Camera className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => setScannerSide('back')}
+                    className="p-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-300 text-[11px]"
+                    title="Scan Back ID Card from Printer / Scanner"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
                   </button>
                   {backCard && (
                     <>
@@ -1934,6 +2001,15 @@ export const IDCardStudio: React.FC = () => {
         onClose={() => setIsOrientationModalOpen(false)}
         currentOrientation={settings.orientation}
         onSelectOrientation={handleOrientationChange}
+      />
+
+      {/* Hardware Printer & ID Card Scanner Modal */}
+      <PrinterScannerModal
+        isOpen={scannerSide !== null}
+        onClose={() => setScannerSide(null)}
+        onScanComplete={handleScannerComplete}
+        targetContext={scannerSide === 'back' ? 'idcard_back' : 'idcard_front'}
+        title={`Scan ID Card ${scannerSide === 'back' ? '(Back Side)' : scannerSide === 'front' ? '(Front Side)' : ''} from Printer`}
       />
     </div>
   );

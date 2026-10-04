@@ -599,6 +599,93 @@ Identify:
     }
   });
 
+  // Network Printer & Scanner Connectivity and Discovery Endpoint
+  app.get("/api/printer/test-connection", async (req, res) => {
+    try {
+      const host = String(req.query.host || req.query.ip || "").trim();
+      const port = Number(req.query.port) || 80;
+
+      if (!host) {
+        return res.status(400).json({
+          success: false,
+          reachable: false,
+          message: "Host / IP address is required",
+        });
+      }
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2800);
+      const startTime = Date.now();
+
+      // Attempt checking standard eSCL scanner endpoint
+      const esclUrl = `http://${host}:${port}/eSCL/ScannerCapabilities`;
+      try {
+        const response = await fetch(esclUrl, {
+          method: "GET",
+          signal: controller.signal,
+          headers: { Accept: "text/xml, application/xml, */*" },
+        });
+        clearTimeout(timeoutId);
+        const duration = Date.now() - startTime;
+        const text = await response.text();
+        const isEscl = text.includes("ScannerCapabilities") || text.includes("eSCL") || text.includes("scan");
+
+        return res.json({
+          success: true,
+          reachable: true,
+          isEscl,
+          status: response.status,
+          latencyMs: duration,
+          host,
+          port,
+          protocol: isEscl ? "eSCL / AirScan 2.0" : "HTTP WebScan",
+          message: isEscl
+            ? `Ready! All-in-One Scanner responded with eSCL 2.0 capabilities (${duration}ms)`
+            : `Printer active on port ${port} (HTTP ${response.status})`,
+        });
+      } catch (err: any) {
+        clearTimeout(timeoutId);
+        // Try fallback to printer root web server
+        const rootController = new AbortController();
+        const rootTimeoutId = setTimeout(() => rootController.abort(), 2000);
+        try {
+          const rootRes = await fetch(`http://${host}:${port}/`, {
+            method: "GET",
+            signal: rootController.signal,
+          });
+          clearTimeout(rootTimeoutId);
+          const duration = Date.now() - startTime;
+          return res.json({
+            success: true,
+            reachable: true,
+            isEscl: false,
+            status: rootRes.status,
+            latencyMs: duration,
+            host,
+            port,
+            protocol: "Printer Web Management",
+            message: `Printer web interface responsive (${duration}ms)`,
+          });
+        } catch (_rootErr) {
+          clearTimeout(rootTimeoutId);
+          return res.json({
+            success: false,
+            reachable: false,
+            host,
+            port,
+            message: `Could not connect to ${host}:${port}. Ensure the printer is on the local network.`,
+          });
+        }
+      }
+    } catch (err: any) {
+      return res.status(500).json({
+        success: false,
+        reachable: false,
+        message: err?.message || "Scanner ping error",
+      });
+    }
+  });
+
   // Vite middleware in dev mode
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

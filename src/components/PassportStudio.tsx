@@ -25,6 +25,7 @@ import {
 import { PassportCropModal } from './PassportCropModal';
 import { WebcamModal } from './WebcamModal';
 import { BackgroundRemovalModal } from './BackgroundRemovalModal';
+import { PrinterScannerModal, ScannedDocumentResult } from './PrinterScannerModal';
 import { removeAiBackground } from '../utils/aiBackgroundRemoval';
 import {
   Upload,
@@ -142,6 +143,7 @@ export const PassportStudio: React.FC<PassportStudioProps> = () => {
   const [isCropModalOpen, setIsCropModalOpen] = useState(false);
   const [isBgRemovalOpen, setIsBgRemovalOpen] = useState(false);
   const [isWebcamOpen, setIsWebcamOpen] = useState(false);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isAiBgRemoving, setIsAiBgRemoving] = useState(false);
   const [aiBgStatus, setAiBgStatus] = useState<string | null>(null);
@@ -161,6 +163,16 @@ export const PassportStudio: React.FC<PassportStudioProps> = () => {
     setPersons((prev) =>
       prev.map((p) => (p.id === activePersonId ? { ...p, ...updates } : p))
     );
+  };
+
+  // Handle scanned photo from printer
+  const handleScanComplete = (scannedDataUrl: string) => {
+    updateActivePerson({
+      rawImage: scannedDataUrl,
+      cropBox: undefined,
+      quadCorners: undefined,
+    });
+    setIsCropModalOpen(true);
   };
 
   // Global Clipboard Paste (Ctrl+V / Cmd+V)
@@ -704,6 +716,15 @@ export const PassportStudio: React.FC<PassportStudioProps> = () => {
             >
               <Camera className="w-4 h-4 text-blue-400" />
               Webcam
+            </button>
+
+            <button
+              onClick={() => setIsScannerOpen(true)}
+              className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-200 text-xs sm:text-sm font-medium border border-purple-500/30 transition-all"
+              title="Scan photo or physical document from printer / flatbed scanner"
+            >
+              <Printer className="w-4 h-4 text-purple-400" />
+              Scan from Printer
             </button>
 
             <button
@@ -1746,6 +1767,15 @@ export const PassportStudio: React.FC<PassportStudioProps> = () => {
           setIsCropModalOpen(true);
         }}
         mode="passport"
+      />
+
+      {/* Hardware Printer & Photo Scanner Modal */}
+      <PrinterScannerModal
+        isOpen={isScannerOpen}
+        onClose={() => setIsScannerOpen(false)}
+        onScanComplete={handleScanComplete}
+        targetContext="passport"
+        title="Scan Photo from Printer / Scanner"
       />
     </div>
   );
